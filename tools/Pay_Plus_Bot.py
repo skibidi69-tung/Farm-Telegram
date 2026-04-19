@@ -1,9 +1,8 @@
-# tools/payplus.py
+# tools/Pay_Plus_Bot.py
 """
-PayPlus Auto Reward Tool - MULTI ACCOUNT
-- Hỗ trợ chạy nhiều session cùng lúc
-- Multi-thread claim reward cho từng session
-- Tích hợp với main_gui.py + Nuitka
+PayPlus Bot - Multi Account + Bảo vệ lỗi
+- Mỗi session chạy multi-thread claim
+- Nếu lỗi quá 50 lần liên tục → tự dừng tool
 """
 
 import os
@@ -16,25 +15,19 @@ from datetime import datetime
 from telethon import TelegramClient
 from telethon.tl.functions.messages import RequestWebViewRequest
 
-# ====================== CONFIG ======================
 BASE_URL = "https://kaliboy002.duckdns.org"
 THREADS_PER_ACCOUNT = 5      # Số luồng claim mỗi tài khoản
 INTERVAL = 5.0               # Giây giữa mỗi đợt claim
 
-# Nhận log từ main_gui.py
 log_to_gui = None
 
 def log(message: str, color: str = "white"):
     ts = datetime.now().strftime("%H:%M:%S")
-    prefix = f"[{ts}]"
     if log_to_gui:
-        log_to_gui(f"{prefix} {message}", color)
+        log_to_gui(f"[{ts}] {message}", color)
     else:
-        colors = {
-            "green": "\033[92m", "red": "\033[91m", "yellow": "\033[93m",
-            "cyan": "\033[96m", "magenta": "\033[95m", "white": "\033[0m"
-        }
-        print(f"{colors.get(color, '')}{prefix} {message}\033[0m")
+        colors = {"green": "\033[92m", "red": "\033[91m", "yellow": "\033[93m", "cyan": "\033[96m", "white": "\033[0m"}
+        print(f"{colors.get(color, '')}[{ts}] {message}\033[0m")
 
 
 class PayPlusBot:
@@ -44,7 +37,8 @@ class PayPlusBot:
         self.init_data = None
         self.session = requests.Session()
         self.lock = threading.Lock()
-        self.stats = {"success": 0, "fail": 0, "earned": 0.0}
+        self.error_count = 0          # Đếm lỗi liên tục
+        self.max_errors = 50          # Dừng nếu lỗi quá 50 lần
         self.is_running = True
 
     async def get_init_data(self):
@@ -57,7 +51,6 @@ class PayPlusBot:
                 log(f"[{self.name}] Session không hợp lệ hoặc đã logout", "red")
                 return False
 
-            me = await client.get_me()
             bot_entity = await client.get_input_entity('Pay_Plus_Bot')
 
             res = await client(RequestWebViewRequest(
@@ -72,7 +65,7 @@ class PayPlusBot:
                 res.url.split('tgWebAppData=')[1].split('&tgWebAppVersion')[0]
             )
 
-            log(f"[{self.name}] Đăng nhập thành công → {me.first_name or self.name}", "green")
+            log(f"[{self.name}] Đăng nhập thành công", "green")
             return True
 
         except Exception as e:
@@ -86,100 +79,81 @@ class PayPlusBot:
             return
 
         try:
-            payload = {
-                "initData": self.init_data,
-                "adType": "gigapub"
-            }
+            payload = {"initData": self.init_data, "adType": "gigapub"}
 
-            r = requests.post(
+            r = self.session.post(
                 f"{BASE_URL}/api/reward",
                 headers={"Content-Type": "application/json"},
                 json=payload,
                 timeout=10
             )
-            res = r.json()
 
-            if r.status_code == 200 and "balance" in res:
-                added = res.get("added", 0.20)
-                with self.lock:
-                    self.stats["success"] += 1
-                    self.stats["earned"] += added
-
-                log(f"[{self.name}][R{round_num}][T{thread_id}] ✅ +${added:.2f} | "
-                    f"Balance: ${res.get('balance', 0):.2f}", "green")
-
-            elif r.status_code == 429:
-                with self.lock:
-                    self.stats["fail"] += 1
-                log(f"[{self.name}][R{round_num}][T{thread_id}] ⏳ Rate limit", "yellow")
+            if r.status_code == 200:
+                res = r.json()
+                if "balance" in res:
+                    added = res.get("added", 0.20)
+                    log(f"[{self.name}][R{round_num}][T{thread_id}] +${added:.2f} | Balance: ${res.get('balance', 0):.2f}", "green")
+                    with self.lock:
+                        self.error_count = 0   # Reset lỗi khi thành công
+                else:
+                    self.handle_error(round_num, thread_id, "No balance in response")
             else:
-                with self.lock:
-                    self.stats["fail"] += 1
-                log(f"[{self.name}][R{round_num}][T{thread_id}] ❌ {r.status_code}: {res.get('error','unknown')}", "red")
+                self.handle_error(round_num, thread_id, f"HTTP {r.status_code}")
 
         except Exception as e:
-            with self.lock:
-                self.stats["fail"] += 1
-            log(f"[{self.name}][R{round_num}][T{thread_id}] ⛔ {e}", "red")
+            self.handle_error(round_num, thread_id, str(e))
+
+    def handle_error(self, round_num, thread_id, error_msg):
+        with self.lock:
+            self.error_count += 1
+        log(f"[{self.name}][R{round_num}][T{thread_id}] Lỗi: {error_msg} (Lỗi liên tục: {self.error_count}/{self.max_errors})", "red")
+
+        if self.error_count >= self.max_errors:
+            log(f"[{self.name}] DỪNG TOOL do lỗi quá {self.max_errors} lần liên tục!", "red")
+            self.is_running = False
 
     async def run(self):
         if not await self.get_init_data():
-            log(f"[{self.name}] Không thể khởi động", "red")
             return
 
         log(f"[{self.name}] Bắt đầu farming | {THREADS_PER_ACCOUNT} luồng | Interval {INTERVAL}s", "cyan")
 
         round_num = 0
-        try:
-            while self.is_running:
-                round_num += 1
-                log(f"[{self.name}] ─── Đợt {round_num} ───────────────────────────", "magenta")
+        while self.is_running:
+            round_num += 1
+            log(f"[{self.name}] ─── Đợt {round_num} ───────────────────────────", "magenta")
 
-                threads = []
-                for t_id in range(1, THREADS_PER_ACCOUNT + 1):
-                    t = threading.Thread(
-                        target=self.claim,
-                        args=(t_id, round_num),
-                        daemon=True
-                    )
-                    threads.append(t)
+            threads = []
+            for t_id in range(1, THREADS_PER_ACCOUNT + 1):
+                t = threading.Thread(target=self.claim, args=(t_id, round_num), daemon=True)
+                threads.append(t)
+                t.start()
 
-                for t in threads:
-                    t.start()
+            for t in threads:
+                t.join()
 
-                for t in threads:
-                    t.join()
+            await asyncio.sleep(INTERVAL)
 
-                log(f"[{self.name}] Stats → ✅ {self.stats['success']} success | "
-                    f"❌ {self.stats['fail']} fail | 💰 Earned: ${self.stats['earned']:.2f}", "cyan")
-
-                await asyncio.sleep(INTERVAL)
-
-        except asyncio.CancelledError:
-            log(f"[{self.name}] Đã dừng farming", "yellow")
-        except Exception as e:
-            log(f"[{self.name}] Lỗi bất ngờ: {e}", "red")
+        log(f"[{self.name}] Đã dừng farming", "yellow")
 
 
-# ====================== ENTRY POINT - Hỗ trợ Multi ======================
-async def run(session_files: list):
-    """Hàm chính hỗ trợ chạy nhiều session"""
-    if isinstance(session_files, str):
-        session_files = [session_files]  # Nếu chỉ truyền 1 session
+# ====================== ENTRY POINT ======================
+async def run(session_files=None):
+    """Hàm chính - Hỗ trợ multi account"""
+    if session_files is None or isinstance(session_files, str):
+        session_files = [f for f in os.listdir(SESSION_DIR) if f.endswith('.session')]
 
-    tasks = []
-    for sess_file in session_files:
-        bot = PayPlusBot(sess_file)
-        tasks.append(bot.run())
+    if not session_files:
+        log("Không tìm thấy session nào!", "red")
+        return
 
+    log(f"Bắt đầu chạy {len(session_files)} tài khoản PayPlus...", "cyan")
+
+    tasks = [PayPlusBot(sess).run() for sess in session_files]
     await asyncio.gather(*tasks, return_exceptions=True)
 
+    log("Hoàn thành tất cả tài khoản PayPlus!", "green")
 
-# Test riêng (chạy file này trực tiếp)
+
 if __name__ == "__main__":
-    import os
-    sessions = [f for f in os.listdir("sessions") if f.endswith('.session')]
-    if sessions:
-        asyncio.run(run(sessions))   # Chạy tất cả session có trong thư mục
-    else:
-        log("Không tìm thấy session nào trong thư mục sessions/", "red")
+    asyncio.run(run())
