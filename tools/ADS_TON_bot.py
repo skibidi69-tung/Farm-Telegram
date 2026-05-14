@@ -1,196 +1,107 @@
-# tools/adston.py
-"""
-Adston (Pocket Income) - Multi Account Version
-- Tự động chạy tất cả session
-- Log đơn giản, sạch sẽ
-"""
-
+import time
 import os
+import sys
 import json
+import random
 import asyncio
-import requests
-import re
 import urllib.parse
 from datetime import datetime
-from telethon import TelegramClient
-from telethon.tl.functions.messages import RequestWebViewRequest
+from telethon import TelegramClient, functions
+from curl_cffi import requests
 
-# ====================== CONFIG ======================
-BASE_URL = "https://pocketincome.codeissuehub.com"
-BOT_USERNAME = 'ADS_TON_bot'
-SESSION_DIR = "sessions"   # ← Đã thêm dòng này để sửa lỗi
+# --- ANSI COLORS (Giữ nguyên từ source) ---
+C = "\033[96m"; Y = "\033[93m"; W = "\033[97m"
+M = "\033[95m"; R = "\033[91m"; G = "\033[92m"
+X = "\033[0m"; BOLD = "\033[1m"
 
-# Nhận log từ main_gui.py (nếu có)
-log_to_gui = None
+# --- CONFIG (API ID & HASH CỦA BẠN) ---
+API_ID = 28752231
+API_HASH = 'ec1c1f2c30e2f1855c3edee7e348480b'
+BOT_USER = "AdsTonBot"
+URL_WEBVIEW = "https://adston.org/"
+SESSION_DIR = "sessions"
 
-def log(message: str, color: str = "white"):
-    ts = datetime.now().strftime("%H:%M:%S")
-    if log_to_gui:
-        log_to_gui(f"[{ts}] {message}", color)
-    else:
-        colors = {
-            "green": "\033[92m",
-            "red": "\033[91m",
-            "yellow": "\033[93m",
-            "cyan": "\033[96m",
-            "white": "\033[0m"
-        }
-        print(f"{colors.get(color, '')}[{ts}] {message}\033[0m")
+if not os.path.exists(SESSION_DIR): os.makedirs(SESSION_DIR)
 
-
-class AdstonBot:
-    def __init__(self, session_file: str):
-        self.session_file = session_file
-        self.name = session_file.replace('.session', '')
+class AdsTonPro:
+    def __init__(self, token, name):
         self.session = requests.Session()
-        self.csrf = None
-        self.balance = "0"
-        self.today_ads = 0
-        self.ads_limit = 0
-
+        self.token = token
+        self.name = name
         self.headers = {
-            'User-Agent': "Mozilla/5.0 (Linux; Android 12; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Mobile Safari/537.36 Telegram-Android/12.1.1",
-            'Accept': "application/json, text/plain, */*",
-            'X-Requested-With': "org.telegram.messenger",
-            'Origin': BASE_URL,
-            'Referer': f"{BASE_URL}/",
+            'Authorization': f'Bearer {self.token}',
+            'Accept': 'application/json, text/plain, */*',
+            'Origin': 'https://adston.org',
+            'Referer': 'https://adston.org/',
+            'User-Agent': 'Mozilla/5.0 (Linux; Android 12; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36 Telegram-Android/10.8.2',
+            'X-Requested-With': 'org.telegram.messenger'
         }
 
-    async def get_init_data(self):
-        client = TelegramClient(os.path.join(SESSION_DIR, self.session_file), 28752231, 'ec1c1f2c30e2f1855c3edee7e348480b')
-        await client.connect()
-        try:
-            if not await client.is_user_authorized():
-                log(f"[{self.name}] Session không hợp lệ hoặc đã logout", "red")
-                return None
+    def log(self, msg, color=W):
+        ts = datetime.now().strftime('%H:%M:%S')
+        print(f"[{ts}] {C}@{self.name}{X} | {color}{msg}{X}")
 
-            bot_entity = await client.get_input_entity(BOT_USERNAME)
-            res = await client(RequestWebViewRequest(
-                peer=bot_entity,
-                bot=bot_entity,
-                platform='android',
-                from_bot_menu=False,
-                url=f"{BASE_URL}/"
-            ))
-
-            tg_data = urllib.parse.unquote(res.url.split('tgWebAppData=')[1].split('&tgWebAppVersion')[0])
-            user_json = json.loads(urllib.parse.parse_qs(tg_data)['user'][0])
-
-            log(f"[{self.name}] Đăng nhập thành công", "green")
-            return tg_data, user_json
-        finally:
-            await client.disconnect()
-
-    async def fetch_csrf(self):
-        try:
-            resp = self.session.get(BASE_URL, headers=self.headers, timeout=15)
-            token = None
-            meta = re.search(r'name="csrf-token" content="(.*?)"', resp.text)
-            if meta:
-                token = meta.group(1)
-            elif self.session.cookies.get("XSRF-TOKEN"):
-                token = urllib.parse.unquote(self.session.cookies.get("XSRF-TOKEN"))
-
-            if token:
-                self.csrf = token
-                return True
-            return False
-        except:
-            return False
-
-    async def run(self):
-        init_data = await self.get_init_data()
-        if not init_data:
-            return
-
-        _, user_info = init_data
-
-        # Đồng bộ tài khoản
-        try:
-            payload = {
-                "first_name": user_info.get('first_name', ''),
-                "last_name": user_info.get('last_name', ''),
-                "username": user_info.get('username', ''),
-                "id": int(user_info['id']),
-                "referral_code": None
-            }
-            headers = self.headers.copy()
-            if self.csrf:
-                headers['x-csrf-token'] = self.csrf
-
-            resp = self.session.post(f"{BASE_URL}/user/check-or-create", json=payload, headers=headers)
-            data = resp.json()
-
-            if data.get("success"):
-                user = data.get("user", {})
-                self.balance = str(user.get("balance", "0"))
-                self.today_ads = int(user.get("today_ads", 0))
-                self.ads_limit = int(user.get("ads_limit", 2))
-                log(f"[{self.name}] Balance: {self.balance} | Ads: {self.today_ads}/{self.ads_limit}", "cyan")
-        except Exception as e:
-            log(f"[{self.name}] Lỗi đồng bộ: {e}", "red")
-            return
-
-        # Farming loop
-        while True:
-            if not self.csrf and not await self.fetch_csrf():
-                await asyncio.sleep(5)
-                continue
-
-            if self.today_ads >= self.ads_limit and self.ads_limit > 0:
-                log(f"[{self.name}] Đã đạt giới hạn ads hôm nay → Hoàn thành!", "green")
-                break
-
-            log(f"[{self.name}] Đang xem quảng cáo {self.today_ads + 1}/{self.ads_limit}...", "magenta")
-
-            for i in range(35, 0, -1):
-                print(f"\r[{datetime.now().strftime('%H:%M:%S')}] [{self.name}] Đang xem ads... {i}s ", end="", flush=True)
-                await asyncio.sleep(1)
-            print("\r" + " " * 70, end="\r")
-
+    def run_ads(self):
+        url = "https://api.adston.org/api/ads/view"
+        for i in range(15): 
             try:
-                payload = {
-                    "telegram_id": int(user_info['id']),
-                    "points": 50000,
-                    "type": "3_ads_set"
-                }
-                headers = self.headers.copy()
-                if self.csrf:
-                    headers['x-csrf-token'] = self.csrf
-
-                resp = self.session.post(f"{BASE_URL}/user/reward", json=payload, headers=headers)
-                result = resp.json()
-
-                if result.get("success"):
-                    self.balance = str(result.get("new_balance", self.balance))
-                    self.today_ads += 1
-                    log(f"[{self.name}] Thành công +50k Points | Balance: {self.balance}", "green")
+                res = self.session.post(url, headers=self.headers, impersonate="chrome124")
+                data = res.json()
+                if res.status_code == 200 and data.get('success'):
+                    self.log(f"Lượt {i+1:02} | {G}Thành công{X} | Balance: {Y}{data.get('balance')}{X}", G)
                 else:
-                    log(f"[{self.name}] Claim thất bại hoặc hết lượt", "yellow")
+                    self.log(f"Lượt {i+1:02} | {Y}{data.get('message', 'Hết lượt')}{X}")
                     break
-            except Exception as e:
-                log(f"[{self.name}] Lỗi claim: {e}", "red")
+            except: break
+            time.sleep(random.uniform(2.0, 3.5))
 
-            await asyncio.sleep(5)
+async def get_auth_data(sess_file):
+    client = TelegramClient(os.path.join(SESSION_DIR, sess_file), API_ID, API_HASH)
+    await client.connect()
+    if not await client.is_user_authorized():
+        await client.disconnect(); return None, None
+    try:
+        bot = await client.get_input_entity(BOT_USER)
+        res = await client(functions.messages.RequestWebViewRequest(
+            peer=bot, bot=bot, platform='android', from_bot_menu=False, url=URL_WEBVIEW
+        ))
+        query_id = urllib.parse.unquote(res.url.split('tgWebAppData=')[1].split('&tgWebAppVersion')[0])
+        me = await client.get_me()
+        await client.disconnect()
+        return query_id, me.first_name
+    except:
+        await client.disconnect(); return None, None
 
+async def main():
+    os.system('cls' if os.name == 'nt' else 'clear')
+    
+    # BẮT ĐẦU VÒNG LẶP VÔ TẬN Ở ĐÂY
+    while True:
+        sessions = [f for f in os.listdir(SESSION_DIR) if f.endswith('.session')]
+        
+        if not sessions:
+            print(f"{R}[!] Không có session nào...{X}")
+            await asyncio.sleep(10)
+            continue
 
-# ====================== ENTRY POINT - MULTI ACCOUNT ======================
-async def run(session_files=None):
-    """Chạy tất cả session"""
-    if session_files is None:
-        session_files = [f for f in os.listdir(SESSION_DIR) if f.endswith('.session')]
+        for s_file in sessions:
+            token, first_name = await get_auth_data(s_file)
+            if token:
+                bot = AdsTonPro(token, first_name)
+                bot.run_ads()
+            await asyncio.sleep(2)
 
-    if not session_files:
-        log("Không tìm thấy session nào trong thư mục sessions!", "red")
-        return
-
-    log(f"Bắt đầu chạy {len(session_files)} tài khoản Adston...", "cyan")
-
-    tasks = [AdstonBot(sess_file).run() for sess_file in session_files]
-    await asyncio.gather(*tasks, return_exceptions=True)
-
-    log("Hoàn thành tất cả tài khoản Adston!", "green")
-
+        # Nghỉ sau khi chạy hết tất cả tài khoản
+        wait_time = 1800 # Nghỉ 30 phút
+        print(f"\n{G}>>> Hoàn thành chu kỳ. Chờ 30p để chạy lại...{X}")
+        for i in range(wait_time, 0, -1):
+            sys.stdout.write(f"\r{Y}[!] Tiếp tục sau: {i}s...{X}")
+            sys.stdout.flush()
+            await asyncio.sleep(1)
+        print("\n")
 
 if __name__ == "__main__":
-    asyncio.run(run())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        sys.exit()
