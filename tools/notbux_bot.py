@@ -116,30 +116,30 @@ class NotBuxBot:
         self.fail_streak += 1
         return False
 
-# --- HÀM RUN() ĐỂ MAIN_GUI.PY CỦA REPO GỌI ĐƠN LẺ TỪNG ACCOUNT ---
+# --- HÀM SỬA LỖI TRUYỀN NHẦM LIST TRÊN REPO MAIN_GUI ---
 def run(web_app_data):
-    """
-    Hàm chuẩn format adston/repo GUI. 
-    Mỗi khi Thread của GUI chạy đến tài khoản nào, nó sẽ gọi hàm này và truyền web_app_data vào.
-    """
+    # Nếu main_gui truyền nguyên một mảng list vào, tự động lấy phần tử đầu tiên
+    if isinstance(web_app_data, list):
+        if len(web_app_data) == 0:
+            return
+        web_app_data = web_app_data[0]
+
     cfg = parse_gui_data(web_app_data)
     if not cfg:
-        print("[X] Dữ liệu WebAppData không hợp lệ!")
         return
 
     bot = NotBuxBot(cfg)
     balance_start = bot.get_balance()
     if balance_start is None:
-        print(f"[*] Tài khoản: {cfg['name']} | Không thể kết nối API Notbux")
+        print(f"[*] Tài khoản: {cfg['name']} | Lỗi kết nối API Notbux")
         return
 
     print(f"[*] Tài khoản: {cfg['name']} | Số dư ban đầu: {balance_start}")
     
-    # 1. Tự động xử lý điểm danh hàng ngày
+    # 1. Tự động điểm danh hàng ngày
     bot.claim_daily_reward()
     time.sleep(1)
 
-    # Danh sách cấu hình mạng Ads quảng cáo cần cày
     tasks = [
         ("ADSGRAM", "27091", "TASK"),
         ("ADSGRAM", "27092", "EARN"),
@@ -147,7 +147,7 @@ def run(web_app_data):
         ("MONETAG", "0082440db830411bf781bf4a72e32aca", "EARN")
     ]
 
-    # 2. Chạy chuỗi Ads ngầm hoàn toàn
+    # 2. Xem quảng cáo ngầm hoàn toàn
     for provider, zone, name in tasks:
         if provider == "ADSGRAM":
             bot.run_adsgram(zone)
@@ -156,8 +156,8 @@ def run(web_app_data):
             
         if bot.fail_streak >= 3:
             break
-        time.sleep(3) # Nghỉ ngắn giữa các mạng Ads
+        time.sleep(2)
 
-    # 3. Kết thúc in ra số dư tổng kết của tài khoản đó
+    # 3. Tổng kết số dư sau khi cày xong account đó
     balance_end = bot.get_balance()
-    print(f"   -> Hoàn thành nhiệm vụ | Số dư hiện tại: {balance_end if balance_end is not None else 'Lỗi kết nối'}")
+    print(f"   -> Hoàn thành | Số dư hiện tại: {balance_end if balance_end is not None else 'Lỗi kết nối'}")
