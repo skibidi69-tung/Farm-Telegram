@@ -1,4 +1,4 @@
-import time
+import asyncio
 import random
 import urllib.parse
 import base64
@@ -47,7 +47,7 @@ class NotBuxBot:
         except: 
             return None
 
-    def claim_daily_reward(self):
+    async def claim_daily_reward(self):
         try:
             resp = self.session.post('https://notbux.click/api/daily-rewards/claim', headers={**self.headers, "Authorization": self.auth}, timeout=10)
             data = resp.json()
@@ -58,7 +58,7 @@ class NotBuxBot:
         except:
             print("   [Daily] -> Lỗi API Check-in")
 
-    def run_adsgram(self, block_id):
+    async def run_adsgram(self, block_id):
         bal_before = self.get_balance()
         params = {
             'envType': 'telegram', 'blockId': block_id, 'platform': 'Win32', 'language': 'en', 'top_domain': 'notbux.click',
@@ -73,12 +73,12 @@ class NotBuxBot:
 
             record = banners[0]['banner']['trackings'][0]['value'].split('record=')[1].split('&')[0]
             self.session.get("https://api.adsgram.ai/event", params={'record': record, 'type': 'Render', 'trackingtypeid': '13'})
-            time.sleep(1)
+            await asyncio.sleep(1)
             self.session.get("https://api.adsgram.ai/event", params={'record': record, 'type': 'Show', 'trackingtypeid': '0'})
             
-            time.sleep(random.randint(22, 25))
+            await asyncio.sleep(random.randint(22, 25))
             self.session.get("https://api.adsgram.ai/event", params={'record': record, 'type': 'Reward', 'trackingtypeid': '14'})
-            time.sleep(2)
+            await asyncio.sleep(2)
             
             if self.get_balance() > bal_before:
                 self.fail_streak = 0
@@ -88,7 +88,7 @@ class NotBuxBot:
         self.fail_streak += 1
         return False
 
-    def run_monetag(self, oaid, section):
+    async def run_monetag(self, oaid, section):
         bal_before = self.get_balance()
         self.session.cookies.clear()
         m_params = {
@@ -104,9 +104,9 @@ class NotBuxBot:
             self.session.get(ads[0].get('impression_url'), headers={**self.headers, 'Referer': f'https://notbux.click/{section.lower()}s'})
             self.session.get(ads[0].get('click'), headers={**self.headers, 'Referer': f'https://notbux.click/{section.lower()}s'})
 
-            time.sleep(random.randint(35, 38) if section == "TASK" else random.randint(18, 21))
+            await asyncio.sleep(random.randint(35, 38) if section == "TASK" else random.randint(18, 21))
             self.session.get(f"https://e8ys.com/resolve?ruid={ruid}", headers={**self.headers, 'Referer': 'https://e8ys.com/500/10558478'})
-            time.sleep(2)
+            await asyncio.sleep(2)
             
             if self.get_balance() > bal_before:
                 self.fail_streak = 0
@@ -116,29 +116,26 @@ class NotBuxBot:
         self.fail_streak += 1
         return False
 
-# --- HÀM SỬA LỖI TRUYỀN NHẦM LIST TRÊN REPO MAIN_GUI ---
-def run(web_app_data):
-    # Nếu main_gui truyền nguyên một mảng list vào, tự động lấy phần tử đầu tiên
+# --- HÀM ASYNC RUN THEO CHUẨN ĐA LUỒNG CỦA MAIN_GUI ---
+async def run(web_app_data):
     if isinstance(web_app_data, list):
-        if len(web_app_data) == 0:
-            return
+        if len(web_app_data) == 0: return
         web_app_data = web_app_data[0]
 
     cfg = parse_gui_data(web_app_data)
-    if not cfg:
-        return
+    if not cfg: return
 
     bot = NotBuxBot(cfg)
     balance_start = bot.get_balance()
     if balance_start is None:
-        print(f"[*] Tài khoản: {cfg['name']} | Lỗi kết nối API Notbux")
+        print(f"[*] Tài khoản: {cfg['name']} | Lỗi kết nối API")
         return
 
     print(f"[*] Tài khoản: {cfg['name']} | Số dư ban đầu: {balance_start}")
     
-    # 1. Tự động điểm danh hàng ngày
-    bot.claim_daily_reward()
-    time.sleep(1)
+    # 1. Điểm danh hàng ngày
+    await bot.claim_daily_reward()
+    await asyncio.sleep(1)
 
     tasks = [
         ("ADSGRAM", "27091", "TASK"),
@@ -147,17 +144,17 @@ def run(web_app_data):
         ("MONETAG", "0082440db830411bf781bf4a72e32aca", "EARN")
     ]
 
-    # 2. Xem quảng cáo ngầm hoàn toàn
+    # 2. Xem quảng cáo (chạy ngầm hoàn toàn không print log thừa)
     for provider, zone, name in tasks:
         if provider == "ADSGRAM":
-            bot.run_adsgram(zone)
+            await bot.run_adsgram(zone)
         else:
-            bot.run_monetag(zone, name)
+            await bot.run_monetag(zone, name)
             
         if bot.fail_streak >= 3:
             break
-        time.sleep(2)
+        await asyncio.sleep(2)
 
-    # 3. Tổng kết số dư sau khi cày xong account đó
+    # 3. Kết thúc in số dư tổng kết
     balance_end = bot.get_balance()
     print(f"   -> Hoàn thành | Số dư hiện tại: {balance_end if balance_end is not None else 'Lỗi kết nối'}")
