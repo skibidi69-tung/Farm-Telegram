@@ -116,8 +116,9 @@ class NotBuxBot:
         self.fail_streak += 1
         return False
 
-# --- HÀM ASYNC RUN THEO CHUẨN ĐA LUỒNG CỦA MAIN_GUI ---
+# --- HÀM RUN CHUẨN FORMAT ASYNC ĐỂ MAIN_GUI GỌI KHÔNG BỊ LỖI ---
 async def run(web_app_data):
+    # Tự động bóc tách nếu GUI truyền vào dưới dạng một phần tử mảng dữ liệu
     if isinstance(web_app_data, list):
         if len(web_app_data) == 0: return
         web_app_data = web_app_data[0]
@@ -133,7 +134,7 @@ async def run(web_app_data):
 
     print(f"[*] Tài khoản: {cfg['name']} | Số dư ban đầu: {balance_start}")
     
-    # 1. Điểm danh hàng ngày
+    # 1. Điểm danh hằng ngày
     await bot.claim_daily_reward()
     await asyncio.sleep(1)
 
@@ -144,7 +145,7 @@ async def run(web_app_data):
         ("MONETAG", "0082440db830411bf781bf4a72e32aca", "EARN")
     ]
 
-    # 2. Xem quảng cáo (chạy ngầm hoàn toàn không print log thừa)
+    # 2. Vòng lặp cày ads ngầm không log rác
     for provider, zone, name in tasks:
         if provider == "ADSGRAM":
             await bot.run_adsgram(zone)
@@ -155,6 +156,6 @@ async def run(web_app_data):
             break
         await asyncio.sleep(2)
 
-    # 3. Kết thúc in số dư tổng kết
+    # 3. Kết xuất số dư tổng kết lên GUI log
     balance_end = bot.get_balance()
     print(f"   -> Hoàn thành | Số dư hiện tại: {balance_end if balance_end is not None else 'Lỗi kết nối'}")
