@@ -3,7 +3,6 @@ import random
 import urllib.parse
 import base64
 import requests
-import threading
 from urllib.parse import parse_qs
 
 def parse_gui_data(raw_data):
@@ -30,7 +29,7 @@ def parse_gui_data(raw_data):
     except:
         return None
 
-class NotBuxWorker:
+class NotBuxBot:
     def __init__(self, cfg):
         self.cfg = cfg
         self.auth = f"tma {cfg['clean_q']}"
@@ -50,9 +49,14 @@ class NotBuxWorker:
 
     def claim_daily_reward(self):
         try:
-            self.session.post('https://notbux.click/api/daily-rewards/claim', headers={**self.headers, "Authorization": self.auth}, timeout=10)
+            resp = self.session.post('https://notbux.click/api/daily-rewards/claim', headers={**self.headers, "Authorization": self.auth}, timeout=10)
+            data = resp.json()
+            if resp.status_code == 200 or data.get('success'):
+                print("   [Daily] -> Điểm danh thành công!")
+            else:
+                print(f"   [Daily] -> {data.get('message', 'Đã điểm danh trước đó.')}")
         except:
-            pass
+            print("   [Daily] -> Lỗi API Check-in")
 
     def run_adsgram(self, block_id):
         bal_before = self.get_balance()
@@ -88,7 +92,7 @@ class NotBuxWorker:
         bal_before = self.get_balance()
         self.session.cookies.clear()
         m_params = {
-            'excludes': '', 'oaid': oaid, 'ymid': f"{self.cfg['uid']}%7C{'tasks_ad_monetag' if section == 'TASK' else 'earn_ad_monetag'}", 
+            'excludes': '', 'oaid': oaid, 'ymid': f"{self.cfg['uid']}%7C{ 'tasks_ad_monetag' if section == 'TASK' else 'earn_ad_monetag' }", 
             'tgp': 'ios', 'os': 'windows', 'os_version': '10.0.0', 'browser_version': '148.0.7778.98', 'sw': '1366', 'sh': '768', 'btz': 'Asia/Calcutta', 'dmn': 'libtl.com', 'is_mobile': 'false', 'of': 'true'
         }
         try:
@@ -112,48 +116,48 @@ class NotBuxWorker:
         self.fail_streak += 1
         return False
 
-# --- HÀM CHẠY ĐỒNG BỘ CHU KỲ (ĐƯỢC GỌI BỞI THREAD THỨ CẤP) ---
-def _loop_farm(list_web_app_data, log_callback):
+# --- HÀM RUN() ĐỂ MAIN_GUI.PY CỦA REPO GỌI ĐƠN LẺ TỪNG ACCOUNT ---
+def run(web_app_data):
+    """
+    Hàm chuẩn format adston/repo GUI. 
+    Mỗi khi Thread của GUI chạy đến tài khoản nào, nó sẽ gọi hàm này và truyền web_app_data vào.
+    """
+    cfg = parse_gui_data(web_app_data)
+    if not cfg:
+        print("[X] Dữ liệu WebAppData không hợp lệ!")
+        return
+
+    bot = NotBuxBot(cfg)
+    balance_start = bot.get_balance()
+    if balance_start is None:
+        print(f"[*] Tài khoản: {cfg['name']} | Không thể kết nối API Notbux")
+        return
+
+    print(f"[*] Tài khoản: {cfg['name']} | Số dư ban đầu: {balance_start}")
+    
+    # 1. Tự động xử lý điểm danh hàng ngày
+    bot.claim_daily_reward()
+    time.sleep(1)
+
+    # Danh sách cấu hình mạng Ads quảng cáo cần cày
     tasks = [
-        ("ADSGRAM", "27091", "TASK"), ("ADSGRAM", "27092", "EARN"),
-        ("MONETAG", "08032ccd9bd5477bf6690d2a3bcbaa55", "TASK"), ("MONETAG", "0082440db830411bf781bf4a72e32aca", "EARN")
+        ("ADSGRAM", "27091", "TASK"),
+        ("ADSGRAM", "27092", "EARN"),
+        ("MONETAG", "08032ccd9bd5477bf6690d2a3bcbaa55", "TASK"),
+        ("MONETAG", "0082440db830411bf781bf4a72e32aca", "EARN")
     ]
-    while True:
-        for idx, raw_data in enumerate(list_web_app_data, start=1):
-            cfg = parse_gui_data(raw_data)
-            if not cfg: continue
 
-            bot = NotBuxWorker(cfg)
-            balance_start = bot.get_balance()
-            if balance_start is None: continue
+    # 2. Chạy chuỗi Ads ngầm hoàn toàn
+    for provider, zone, name in tasks:
+        if provider == "ADSGRAM":
+            bot.run_adsgram(zone)
+        else:
+            bot.run_monetag(zone, name)
+            
+        if bot.fail_streak >= 3:
+            break
+        time.sleep(3) # Nghỉ ngắn giữa các mạng Ads
 
-            if log_callback:
-                log_callback(f"[*] Acc {idx}/{len(list_web_app_data)} | {cfg['name']} | Khởi động số dư: {balance_start}")
-
-            bot.claim_daily_reward()
-            time.sleep(1)
-
-            for provider, zone, name in tasks:
-                if provider == "ADSGRAM":
-                    bot.run_adsgram(zone)
-                else:
-                    bot.run_monetag(zone, name)
-                if bot.fail_streak >= 3: 
-                    break
-                time.sleep(3)
-
-            if log_callback:
-                log_callback(f"   -> Hoàn thành | Số dư sau khi cày: {bot.get_balance()}")
-
-        if log_callback:
-            log_callback("[*] Hoàn thành lượt quét, nghỉ chu kỳ 10 giây...")
-        time.sleep(10)
-
-# --- HÀM KHỞI CHẠY THREAD KHÔNG GÂY ĐÓNG BĂNG GUI ---
-def start_notbux_farm(list_web_app_data, log_callback=None):
-    """
-    list_web_app_data: Mảng chứa chuỗi WebAppData lấy từ GUI
-    log_callback: Hàm nhận log dạng string để hiển thị lên Giao diện GUI (Ví dụ: self.update_log_box)
-    """
-    t = threading.Thread(target=_loop_farm, args=(list_web_app_data, log_callback), daemon=True)
-    t.start()
+    # 3. Kết thúc in ra số dư tổng kết của tài khoản đó
+    balance_end = bot.get_balance()
+    print(f"   -> Hoàn thành nhiệm vụ | Số dư hiện tại: {balance_end if balance_end is not None else 'Lỗi kết nối'}")
