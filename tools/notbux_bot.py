@@ -1,10 +1,9 @@
-import os
-import sys
 import time
 import random
 import urllib.parse
 import base64
 import requests
+import threading
 from urllib.parse import parse_qs
 
 def parse_gui_data(raw_data):
@@ -20,26 +19,18 @@ def parse_gui_data(raw_data):
     try:
         import json
         user_data = json.loads(user_json)
-        tg_id = str(user_data.get('id', ''))
-        first_name = user_data.get('first_name', 'User')
-        
-        auth_date = parsed.get('auth_date', [''])[0]
-        query_id = parsed.get('query_id', [''])[0]
-        check_str = f"auth_date={auth_date}\nquery_id={query_id}\nuser={user_json}"
-        encoded_check = base64.b64encode(check_str.encode()).decode()
-
         return {
             'clean_q': clean_q,
-            'uid': tg_id,
+            'uid': str(user_data.get('id', '')),
             'signature': parsed.get('signature', [''])[0],
             'raw_hash': parsed.get('hash', [''])[0],
-            'data_check_string': encoded_check,
-            'name': first_name
+            'data_check_string': base64.b64encode(f"auth_date={parsed.get('auth_date', [''])[0]}\nquery_id={parsed.get('query_id', [''])[0]}\nuser={user_json}".encode()).decode(),
+            'name': user_data.get('first_name', 'User')
         }
     except:
         return None
 
-class NotBuxBot:
+class NotBuxWorker:
     def __init__(self, cfg):
         self.cfg = cfg
         self.auth = f"tma {cfg['clean_q']}"
@@ -51,31 +42,23 @@ class NotBuxBot:
         self.fail_streak = 0
 
     def get_balance(self):
-        h = {**self.headers, "Authorization": self.auth}
         try:
-            resp = self.session.get('https://notbux.click/api/me', headers=h, timeout=10)
+            resp = self.session.get('https://notbux.click/api/me', headers={**self.headers, "Authorization": self.auth}, timeout=10)
             return resp.json()['user']['balance_coins']
         except: 
             return None
 
     def claim_daily_reward(self):
-        h = {**self.headers, "Authorization": self.auth}
         try:
-            resp = self.session.post('https://notbux.click/api/daily-rewards/claim', headers=h, timeout=10)
-            data = resp.json()
-            if resp.status_code == 200 or data.get('success'):
-                print(f"   [Daily] -> Check-in thành công!")
-            else:
-                print(f"   [Daily] -> {data.get('message', 'Đã điểm danh trước đó.')}")
+            self.session.post('https://notbux.click/api/daily-rewards/claim', headers={**self.headers, "Authorization": self.auth}, timeout=10)
         except:
-            print("   [Daily] -> Lỗi API Check-in")
+            pass
 
     def run_adsgram(self, block_id):
         bal_before = self.get_balance()
         params = {
-            'envType': 'telegram', 'blockId': block_id, 'platform': 'Win32',
-            'language': 'en', 'top_domain': 'notbux.click', 'signature': self.cfg['signature'],
-            'data_check_string': self.cfg['data_check_string'], 'sdk_version': '1.47.0',
+            'envType': 'telegram', 'blockId': block_id, 'platform': 'Win32', 'language': 'en', 'top_domain': 'notbux.click',
+            'signature': self.cfg['signature'], 'data_check_string': self.cfg['data_check_string'], 'sdk_version': '1.47.0',
             'tg_id': self.cfg['uid'], 'tg_platform': 'ios', 'tma_version': '8.0',
             'request_id': ''.join([str(random.randint(0, 9)) for _ in range(30)]), 'raw': self.cfg['raw_hash']
         }
@@ -104,28 +87,21 @@ class NotBuxBot:
     def run_monetag(self, oaid, section):
         bal_before = self.get_balance()
         self.session.cookies.clear()
-        suffix = "tasks_ad_monetag" if section == "TASK" else "earn_ad_monetag"
-        ymid = f"{self.cfg['uid']}%7C{suffix}"
-        
         m_params = {
-            'excludes': '', 'oaid': oaid, 'ymid': ymid, 'tgp': 'ios', 'os': 'windows',
-            'os_version': '10.0.0', 'browser_version': '148.0.7778.98', 'sw': '1366',
-            'sh': '768', 'btz': 'Asia/Calcutta', 'dmn': 'libtl.com', 'is_mobile': 'false', 'of': 'true'
+            'excludes': '', 'oaid': oaid, 'ymid': f"{self.cfg['uid']}%7C{'tasks_ad_monetag' if section == 'TASK' else 'earn_ad_monetag'}", 
+            'tgp': 'ios', 'os': 'windows', 'os_version': '10.0.0', 'browser_version': '148.0.7778.98', 'sw': '1366', 'sh': '768', 'btz': 'Asia/Calcutta', 'dmn': 'libtl.com', 'is_mobile': 'false', 'of': 'true'
         }
-        m_url = f"https://e8ys.com/500/10558478?{urllib.parse.urlencode(m_params)}"
-        curr_headers = {**self.headers, 'Referer': f'https://notbux.click/{section.lower()}s'}
-
         try:
-            r_ad = self.session.get(m_url, headers=curr_headers, timeout=15)
+            r_ad = self.session.get(f"https://e8ys.com/500/10558478?{urllib.parse.urlencode(m_params)}", headers={**self.headers, 'Referer': f'https://notbux.click/{section.lower()}s'}, timeout=15)
             ad_data = r_ad.json()
             ruid, ads = ad_data.get('ruid'), ad_data.get('ads', [])
             if not ads or not ruid: return False
 
-            self.session.get(ads[0].get('impression_url'), headers=curr_headers)
-            self.session.get(ads[0].get('click'), headers=curr_headers)
+            self.session.get(ads[0].get('impression_url'), headers={**self.headers, 'Referer': f'https://notbux.click/{section.lower()}s'})
+            self.session.get(ads[0].get('click'), headers={**self.headers, 'Referer': f'https://notbux.click/{section.lower()}s'})
 
             time.sleep(random.randint(35, 38) if section == "TASK" else random.randint(18, 21))
-            self.session.get(f"https://e8ys.com/resolve?ruid={ruid}", headers={**curr_headers, 'Referer': 'https://e8ys.com/500/10558478'})
+            self.session.get(f"https://e8ys.com/resolve?ruid={ruid}", headers={**self.headers, 'Referer': 'https://e8ys.com/500/10558478'})
             time.sleep(2)
             
             if self.get_balance() > bal_before:
@@ -136,48 +112,48 @@ class NotBuxBot:
         self.fail_streak += 1
         return False
 
-# --- HÀM CHÍNH TRUYỀN DATA TỪ GUI VÀO ĐỂ FARM ---
-def start_notbux_farm(list_web_app_data):
-    if not list_web_app_data:
-        return
-
+# --- HÀM CHẠY ĐỒNG BỘ CHU KỲ (ĐƯỢC GỌI BỞI THREAD THỨ CẤP) ---
+def _loop_farm(list_web_app_data, log_callback):
     tasks = [
-        ("ADSGRAM", "27091", "TASK"),
-        ("ADSGRAM", "27092", "EARN"),
-        ("MONETAG", "08032ccd9bd5477bf6690d2a3bcbaa55", "TASK"),
-        ("MONETAG", "0082440db830411bf781bf4a72e32aca", "EARN")
+        ("ADSGRAM", "27091", "TASK"), ("ADSGRAM", "27092", "EARN"),
+        ("MONETAG", "08032ccd9bd5477bf6690d2a3bcbaa55", "TASK"), ("MONETAG", "0082440db830411bf781bf4a72e32aca", "EARN")
     ]
-
     while True:
         for idx, raw_data in enumerate(list_web_app_data, start=1):
             cfg = parse_gui_data(raw_data)
             if not cfg: continue
 
-            bot = NotBuxBot(cfg)
+            bot = NotBuxWorker(cfg)
             balance_start = bot.get_balance()
             if balance_start is None: continue
 
-            # Chỉ print đúng 1 dòng thông tin tài khoản ban đầu
-            print(f"[*] Acc {idx}/{len(list_web_app_data)} | {cfg['name']} | Số dư ban đầu: {balance_start}")
-            
-            # Xử lý điểm danh (Có print kết quả)
+            if log_callback:
+                log_callback(f"[*] Acc {idx}/{len(list_web_app_data)} | {cfg['name']} | Khởi động số dư: {balance_start}")
+
             bot.claim_daily_reward()
             time.sleep(1)
 
-            # Chạy ngầm toàn bộ Ads (Không print log rác khi đang xem)
             for provider, zone, name in tasks:
                 if provider == "ADSGRAM":
                     bot.run_adsgram(zone)
                 else:
                     bot.run_monetag(zone, name)
-
                 if bot.fail_streak >= 3: 
                     break
                 time.sleep(3)
 
-            # In số dư tổng kết cuối cùng của tài khoản sau khi cày ads xong
-            balance_end = bot.get_balance()
-            print(f"   -> Hoàn thành | Số dư hiện tại: {balance_end if balance_end is not None else 'Lỗi kết nối'}")
+            if log_callback:
+                log_callback(f"   -> Hoàn thành | Số dư sau khi cày: {bot.get_balance()}")
 
-        # Nghỉ chu kỳ ngắn 10 giây đúng yêu cầu của bạn
+        if log_callback:
+            log_callback("[*] Hoàn thành lượt quét, nghỉ chu kỳ 10 giây...")
         time.sleep(10)
+
+# --- HÀM KHỞI CHẠY THREAD KHÔNG GÂY ĐÓNG BĂNG GUI ---
+def start_notbux_farm(list_web_app_data, log_callback=None):
+    """
+    list_web_app_data: Mảng chứa chuỗi WebAppData lấy từ GUI
+    log_callback: Hàm nhận log dạng string để hiển thị lên Giao diện GUI (Ví dụ: self.update_log_box)
+    """
+    t = threading.Thread(target=_loop_farm, args=(list_web_app_data, log_callback), daemon=True)
+    t.start()
