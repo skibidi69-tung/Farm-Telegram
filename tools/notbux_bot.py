@@ -51,53 +51,60 @@ class NotBuxBot:
     def __init__(self, cfg, log_func=print):
         self.cfg = cfg
         self.auth = f"tma {cfg['clean_q']}"
-        self.headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                        'Accept': '*/*', 'Origin': 'https://notbux.click', 'Referer': 'https://notbux.click/'}
+        self.headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': '*/*',
+            'Origin': 'https://notbux.click',
+            'Referer': 'https://notbux.click/',
+            'Authorization': self.auth
+        }
         self.session = requests.Session()
         self.fail_streak = 0
         self.log = log_func
 
     def get_balance(self):
         try:
-            resp = self.session.get('https://notbux.click/api/me', headers={**self.headers, 'Authorization': self.auth}, timeout=10)
-            return resp.json()['user']['balance_coins']
+            resp = self.session.get('https://notbux.click/api/me', timeout=10)
+            if resp.status_code == 200:
+                return resp.json()['user']['balance_coins']
         except:
-            return None
+            pass
+        return None
 
     def claim_daily(self):
-        """Claim daily check-in reward (API /api/earn/checkin)"""
+        """Claim daily check-in using /api/earn/checkin"""
         self.log("[Daily] Đang nhận thưởng hàng ngày...")
         try:
-            resp = self.session.post('https://notbux.click/api/earn/checkin',
-                                     headers={**self.headers, 'Authorization': self.auth},
-                                     json={}, timeout=10)
+            resp = self.session.post('https://notbux.click/api/earn/checkin', json={}, timeout=10)
             if resp.status_code == 200:
                 data = resp.json()
-                # API trả về thường là {"ok":true} hoặc {"success":true}
                 if data.get('ok') or data.get('success'):
                     new_balance = self.get_balance()
-                    self.log(f"[Daily] Nhận thưởng thành công! Số dư mới: {new_balance}", color="green")
+                    self.log(f"[Daily] Nhận thưởng thành công! Số dư mới: {new_balance}")
                     return True
                 else:
-                    self.log(f"[Daily] Đã nhận hôm nay rồi hoặc lỗi: {data}", color="yellow")
+                    self.log(f"[Daily] Đã nhận hôm nay rồi hoặc lỗi: {data}")
             else:
-                self.log(f"[Daily] HTTP {resp.status_code} - Có thể đã claim rồi", color="yellow")
+                self.log(f"[Daily] HTTP {resp.status_code} - Có thể đã claim rồi")
         except Exception as e:
-            self.log(f"[Daily] Lỗi kết nối: {e}", color="red")
+            self.log(f"[Daily] Lỗi kết nối: {e}")
         return False
 
     def run_adsgram(self, block_id, section_name):
         self.log(f"[ADSGRAM:{section_name}] Đang lấy quảng cáo...")
         bal_before = self.get_balance()
-        params = {'envType':'telegram','blockId':block_id,'platform':'Win32','language':'en',
-                  'top_domain':'notbux.click','signature':self.cfg['signature'],
-                  'data_check_string':self.cfg['data_check_string'],'sdk_version':'1.47.0',
-                  'tg_id':self.cfg['uid'],'tg_platform':'ios','tma_version':'8.0',
-                  'request_id':''.join(random.choices('0123456789',k=30)),'raw':self.cfg['raw_hash']}
+        params = {
+            'envType':'telegram','blockId':block_id,'platform':'Win32','language':'en',
+            'top_domain':'notbux.click','signature':self.cfg['signature'],
+            'data_check_string':self.cfg['data_check_string'],'sdk_version':'1.47.0',
+            'tg_id':self.cfg['uid'],'tg_platform':'ios','tma_version':'8.0',
+            'request_id':''.join(random.choices('0123456789',k=30)),'raw':self.cfg['raw_hash']
+        }
         try:
-            resp = self.session.get("https://api.adsgram.ai/adv", params=params, headers=self.headers)
+            resp = self.session.get("https://api.adsgram.ai/adv", params=params, timeout=15)
             banners = resp.json().get('banners', [])
-            if not banners: return False
+            if not banners:
+                return False
             record = banners[0]['banner']['trackings'][0]['value'].split('record=')[1].split('&')[0]
             self.session.get("https://api.adsgram.ai/event", params={'record':record,'type':'Render','trackingtypeid':'13'})
             time.sleep(2)
@@ -112,7 +119,8 @@ class NotBuxBot:
                 self.log(f"Thành công! Dư: {bal_after}")
                 self.fail_streak = 0
                 return True
-        except: pass
+        except:
+            pass
         self.fail_streak += 1
         return False
 
@@ -122,9 +130,11 @@ class NotBuxBot:
         bal_before = self.get_balance()
         suffix = "tasks_ad_monetag" if section=="TASK" else "earn_ad_monetag"
         ymid = f"{self.cfg['uid']}%7C{suffix}"
-        m_params = {'excludes':'','oaid':oaid,'ymid':ymid,'tgp':'ios','os':'windows','os_version':'10.0.0',
-                    'browser_version':'148.0.7778.98','sw':'1366','sh':'768','btz':'Asia/Calcutta',
-                    'dmn':'libtl.com','is_mobile':'false','of':'true'}
+        m_params = {
+            'excludes':'','oaid':oaid,'ymid':ymid,'tgp':'ios','os':'windows','os_version':'10.0.0',
+            'browser_version':'148.0.7778.98','sw':'1366','sh':'768','btz':'Asia/Calcutta',
+            'dmn':'libtl.com','is_mobile':'false','of':'true'
+        }
         m_url = f"https://e8ys.com/500/10558478?{urllib.parse.urlencode(m_params)}"
         ref = f'https://notbux.click/{section.lower()}s' if section=="TASK" else 'https://notbux.click/earn'
         headers = {**self.headers, 'Referer': ref}
@@ -132,7 +142,8 @@ class NotBuxBot:
             r_ad = self.session.get(m_url, headers=headers, timeout=15)
             ad_data = r_ad.json()
             ruid, ads = ad_data.get('ruid'), ad_data.get('ads', [])
-            if not ads or not ruid: return False
+            if not ads or not ruid:
+                return False
             self.session.get(ads[0].get('impression_url'), headers=headers)
             self.session.get(ads[0].get('click'), headers=headers)
             wait = random.randint(35,40) if section=="TASK" else random.randint(18,22)
@@ -145,7 +156,8 @@ class NotBuxBot:
                 self.log(f"Thành công! Dư: {bal_after}")
                 self.fail_streak = 0
                 return True
-        except: pass
+        except:
+            pass
         self.fail_streak += 1
         return False
 
@@ -153,13 +165,16 @@ class NotBuxBot:
         # 1. Claim daily trước
         self.claim_daily()
         time.sleep(2)
-        
-        # 2. Chạy các quảng cáo
-        tasks = [("ADSGRAM","27091","TASK"),("ADSGRAM","27092","EARN"),
-                 ("MONETAG","08032ccd9bd5477bf6690d2a3bcbaa55","TASK"),
-                 ("MONETAG","0082440db830411bf781bf4a72e32aca","EARN")]
+
+        # 2. Chạy quảng cáo
+        tasks = [
+            ("ADSGRAM","27091","TASK"),
+            ("ADSGRAM","27092","EARN"),
+            ("MONETAG","08032ccd9bd5477bf6690d2a3bcbaa55","TASK"),
+            ("MONETAG","0082440db830411bf781bf4a72e32aca","EARN")
+        ]
         for provider, zone, name in tasks:
-            if provider=="ADSGRAM":
+            if provider == "ADSGRAM":
                 self.run_adsgram(zone, name)
             else:
                 self.run_monetag(zone, name)
