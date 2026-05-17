@@ -26,7 +26,8 @@ async def get_init_data(session_file):
         auth_data = urllib.parse.unquote(res.url.split('tgWebAppData=')[1].split('&tgWebAppVersion')[0])
         await client.disconnect()
         return auth_data, me.first_name, me.id
-    except:
+    except Exception as e:
+        print(f"[DEBUG] get_init_data error: {e}")
         await client.disconnect()
         return None
 
@@ -43,7 +44,8 @@ def parse_config(clean_q, first_name, tg_id):
             'clean_q': clean_q, 'uid': str(tg_id), 'signature': parsed.get('signature', [''])[0],
             'raw_hash': parsed.get('hash', [''])[0], 'data_check_string': encoded_check, 'name': first_name
         }
-    except:
+    except Exception as e:
+        print(f"[DEBUG] parse_config error: {e}")
         return None
 
 class NotBuxBot:
@@ -52,28 +54,37 @@ class NotBuxBot:
         self.auth = f"tma {cfg['clean_q']}"
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept': '*/*',
+            'Accept': 'application/json, text/plain, */*',
+            'Content-Type': 'application/json',
             'Origin': 'https://notbux.click',
             'Referer': 'https://notbux.click/',
             'Authorization': self.auth
         }
         self.session = requests.Session()
         self.fail_streak = 0
-        self.log = log_func   # không có màu sắc
+        self.log = log_func
 
     def get_balance(self):
+        url = 'https://notbux.click/api/me'
         try:
-            resp = self.session.get('https://notbux.click/api/me', timeout=10)
+            resp = self.session.get(url, headers=self.headers, timeout=10)
+            self.log(f"[DEBUG] /api/me status: {resp.status_code}")
             if resp.status_code == 200:
-                return resp.json()['user']['balance_coins']
-        except:
-            pass
+                data = resp.json()
+                balance = data.get('user', {}).get('balance_coins')
+                self.log(f"[DEBUG] Balance raw: {balance}")
+                return balance
+            else:
+                self.log(f"[DEBUG] /api/me response: {resp.text[:200]}")
+        except Exception as e:
+            self.log(f"[DEBUG] get_balance exception: {e}")
         return None
 
     def claim_daily(self):
         self.log("[Daily] Đang nhận thưởng hàng ngày...")
         try:
-            resp = self.session.post('https://notbux.click/api/earn/checkin', json={}, timeout=10)
+            resp = self.session.post('https://notbux.click/api/earn/checkin', json={}, headers=self.headers, timeout=10)
+            self.log(f"[DEBUG] /earn/checkin status: {resp.status_code}")
             if resp.status_code == 200:
                 data = resp.json()
                 if data.get('ok') or data.get('success'):
@@ -83,9 +94,9 @@ class NotBuxBot:
                 else:
                     self.log(f"[Daily] Đã nhận hôm nay rồi hoặc lỗi: {data}")
             else:
-                self.log(f"[Daily] HTTP {resp.status_code} - Có thể đã claim rồi")
+                self.log(f"[Daily] HTTP {resp.status_code} - {resp.text[:100]}")
         except Exception as e:
-            self.log(f"[Daily] Lỗi kết nối: {e}")
+            self.log(f"[Daily] Lỗi: {e}")
         return False
 
     def run_adsgram(self, block_id, section_name):
@@ -99,7 +110,7 @@ class NotBuxBot:
             'request_id':''.join(random.choices('0123456789',k=30)),'raw':self.cfg['raw_hash']
         }
         try:
-            resp = self.session.get("https://api.adsgram.ai/adv", params=params, timeout=15)
+            resp = self.session.get("https://api.adsgram.ai/adv", params=params, headers=self.headers, timeout=15)
             banners = resp.json().get('banners', [])
             if not banners:
                 return False
@@ -117,8 +128,8 @@ class NotBuxBot:
                 self.log(f"Thành công! Dư: {bal_after}")
                 self.fail_streak = 0
                 return True
-        except:
-            pass
+        except Exception as e:
+            self.log(f"ADSGRAM lỗi: {e}")
         self.fail_streak += 1
         return False
 
@@ -154,8 +165,8 @@ class NotBuxBot:
                 self.log(f"Thành công! Dư: {bal_after}")
                 self.fail_streak = 0
                 return True
-        except:
-            pass
+        except Exception as e:
+            self.log(f"MONETAG lỗi: {e}")
         self.fail_streak += 1
         return False
 
@@ -193,7 +204,7 @@ async def run(session_files, log_callback=print):
             continue
         bot = NotBuxBot(cfg, log_callback)
         bal = bot.get_balance()
-        log_callback(f"[NotBux] {cfg['name']} | Dư: {bal if bal else '??'}")
+        log_callback(f"[NotBux] {cfg['name']} | Dư: {bal if bal is not None else '??'}")
         if bal is None:
             continue
         bot.run_all()
