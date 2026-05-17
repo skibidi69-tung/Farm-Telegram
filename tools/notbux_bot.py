@@ -12,7 +12,7 @@ BOT_USERNAME = 'notbux_bot'
 WEBAPP_URL = "https://notbux.click/"
 SESSION_DIR = "sessions"
 
-MAX_WORKERS = 5  # Số luồng chạy song song tối đa
+MAX_WORKERS = 50  # Số luồng chạy song song tối đa
 
 async def get_init_data(session_file):
     client = TelegramClient(os.path.join(SESSION_DIR, session_file), API_ID, API_HASH)
