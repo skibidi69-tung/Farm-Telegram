@@ -5,7 +5,6 @@ from urllib.parse import parse_qs
 from telethon import TelegramClient
 from telethon.tl.functions.messages import RequestWebViewRequest
 
-# Các biến này sẽ được truyền từ main_gui.py (hoặc lấy từ biến global)
 API_ID = globals().get('API_ID', 28752231)
 API_HASH = globals().get('API_HASH', 'ec1c1f2c30e2f1855c3edee7e348480b')
 BOT_USERNAME = 'notbux_bot'
@@ -60,7 +59,8 @@ class NotBuxBot:
         }
         self.session = requests.Session()
         self.fail_streak = 0
-        self.log = log_func
+        # Đảm bảo log_func chỉ nhận một tham số (message)
+        self.log = lambda msg: log_func(msg)
 
     def get_balance(self):
         try:
@@ -72,7 +72,6 @@ class NotBuxBot:
         return None
 
     def claim_daily(self):
-        """Claim daily check-in using /api/earn/checkin"""
         self.log("[Daily] Đang nhận thưởng hàng ngày...")
         try:
             resp = self.session.post('https://notbux.click/api/earn/checkin', json={}, timeout=10)
@@ -162,11 +161,8 @@ class NotBuxBot:
         return False
 
     def run_all(self):
-        # 1. Claim daily trước
         self.claim_daily()
         time.sleep(2)
-
-        # 2. Chạy quảng cáo
         tasks = [
             ("ADSGRAM","27091","TASK"),
             ("ADSGRAM","27092","EARN"),
@@ -183,7 +179,6 @@ class NotBuxBot:
                 break
             time.sleep(8)
 
-# Hàm chính được gọi từ main_gui.py
 async def run(session_files, log_callback=print):
     log_callback("[NotBux] Bắt đầu...")
     for sfile in session_files:
