@@ -59,8 +59,7 @@ class NotBuxBot:
         }
         self.session = requests.Session()
         self.fail_streak = 0
-        # Đảm bảo log_func chỉ nhận một tham số (message)
-        self.log = lambda msg: log_func(msg)
+        self.log = log_func   # không có màu sắc
 
     def get_balance(self):
         try:
