@@ -12,8 +12,7 @@ BOT_USERNAME = 'notbux_bot'
 WEBAPP_URL = "https://notbux.click/"
 SESSION_DIR = "sessions"
 
-# Số luồng chạy song song tối đa (có thể điều chỉnh)
-MAX_WORKERS = 5
+MAX_WORKERS = 5  # Số luồng chạy song song tối đa
 
 async def get_init_data(session_file):
     client = TelegramClient(os.path.join(SESSION_DIR, session_file), API_ID, API_HASH)
@@ -167,28 +166,34 @@ class NotBuxBot:
         return False
 
     def run_all(self):
+        # Claim daily một lần khi bắt đầu
         self.claim_daily()
         time.sleep(2)
-        tasks = [
-            ("ADSGRAM", "27091", "TASK"),
-            ("ADSGRAM", "27092", "EARN"),
-            ("MONETAG", "08032ccd9bd5477bf6690d2a3bcbaa55", "TASK"),
-            ("MONETAG", "0082440db830411bf781bf4a72e32aca", "EARN")
-        ]
-        for provider, zone, name in tasks:
-            if provider == "ADSGRAM":
-                self.run_adsgram(zone, name)
-            else:
-                self.run_monetag(zone, name)
-            if self.fail_streak >= 3:
-                self.log("Dừng: 3 lỗi liên tiếp (hết ads hoặc giới hạn)")
-                break
-            time.sleep(8)
 
-# ------------------- CHẠY SONG SONG NHIỀU TÀI KHOẢN BẰNG THREADPOOL -------------------
+        # Vòng lặp chạy liên tục đến khi fail_streak >= 3
+        while self.fail_streak < 3:
+            tasks = [
+                ("ADSGRAM", "27091", "TASK"),
+                ("ADSGRAM", "27092", "EARN"),
+                ("MONETAG", "08032ccd9bd5477bf6690d2a3bcbaa55", "TASK"),
+                ("MONETAG", "0082440db830411bf781bf4a72e32aca", "EARN")
+            ]
+            for provider, zone, name in tasks:
+                if provider == "ADSGRAM":
+                    self.run_adsgram(zone, name)
+                else:
+                    self.run_monetag(zone, name)
+                if self.fail_streak >= 3:
+                    break
+                time.sleep(8)
+            # Nếu chưa fail, tiếp tục vòng mới
+            if self.fail_streak < 3:
+                self.log("=== Hoàn thành một vòng quảng cáo, tiếp tục vòng mới ===")
+                time.sleep(10)  # nghỉ giữa các vòng
+        self.log("Dừng: 3 lỗi liên tiếp (có thể hết quảng cáo hoặc giới hạn)")
+
+# ------------------- CHẠY SONG SONG -------------------
 def process_account_sync(sfile, log_callback):
-    """Xử lý một tài khoản (hàm đồng bộ, chạy trong thread riêng)"""
-    # Vì get_init_data là async, cần tạo event loop mới trong thread
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
@@ -213,7 +218,6 @@ def process_account_sync(sfile, log_callback):
 
 async def run(session_files, log_callback=print):
     log_callback(f"[NotBux] Bắt đầu (song song, tối đa {MAX_WORKERS} luồng)...")
-    # Dùng ThreadPoolExecutor để chạy song song các tài khoản
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = {executor.submit(process_account_sync, sfile, log_callback): sfile for sfile in session_files}
         for future in as_completed(futures):
