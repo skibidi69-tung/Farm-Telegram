@@ -64,6 +64,28 @@ class NotBuxBot:
         except:
             return None
 
+    def claim_daily(self):
+        """Claim daily check-in reward (API /api/earn/checkin)"""
+        self.log("[Daily] Đang nhận thưởng hàng ngày...")
+        try:
+            resp = self.session.post('https://notbux.click/api/earn/checkin',
+                                     headers={**self.headers, 'Authorization': self.auth},
+                                     json={}, timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                # API trả về thường là {"ok":true} hoặc {"success":true}
+                if data.get('ok') or data.get('success'):
+                    new_balance = self.get_balance()
+                    self.log(f"[Daily] Nhận thưởng thành công! Số dư mới: {new_balance}", color="green")
+                    return True
+                else:
+                    self.log(f"[Daily] Đã nhận hôm nay rồi hoặc lỗi: {data}", color="yellow")
+            else:
+                self.log(f"[Daily] HTTP {resp.status_code} - Có thể đã claim rồi", color="yellow")
+        except Exception as e:
+            self.log(f"[Daily] Lỗi kết nối: {e}", color="red")
+        return False
+
     def run_adsgram(self, block_id, section_name):
         self.log(f"[ADSGRAM:{section_name}] Đang lấy quảng cáo...")
         bal_before = self.get_balance()
@@ -128,6 +150,11 @@ class NotBuxBot:
         return False
 
     def run_all(self):
+        # 1. Claim daily trước
+        self.claim_daily()
+        time.sleep(2)
+        
+        # 2. Chạy các quảng cáo
         tasks = [("ADSGRAM","27091","TASK"),("ADSGRAM","27092","EARN"),
                  ("MONETAG","08032ccd9bd5477bf6690d2a3bcbaa55","TASK"),
                  ("MONETAG","0082440db830411bf781bf4a72e32aca","EARN")]
