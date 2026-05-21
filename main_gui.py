@@ -27,6 +27,7 @@ TOOLS_RAW = {
     "ADS_TON_bot": "https://raw.githubusercontent.com/skibidi69-tung/Farm-Telegram/main/tools/ADS_TON_bot.py",
     "ShibexaBot": "https://raw.githubusercontent.com/skibidi69-tung/Farm-Telegram/main/tools/ShibexaBot.py",
     "notbux_bot": "https://raw.githubusercontent.com/skibidi69-tung/Farm-Telegram/refs/heads/main/tools/notbux_bot.py"
+    "LitecoinGeneratorBot": "https://raw.githubusercontent.com/skibidi69-tung/Farm-Telegram/refs/heads/main/tools/LitecoinGeneratorBot.py"
 }
 
 log_queue = queue.Queue()
