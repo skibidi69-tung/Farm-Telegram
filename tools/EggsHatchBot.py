@@ -108,15 +108,23 @@ class EggsHatchBot:
         return False
 
     def claim_daily(self):
+        self.log("📅 Daily")
         watch_start = int(time.time() * 1000)
+        ad_duration = random.randint(30, 32)
+        time.sleep(ad_duration + random.uniform(1, 2))  # giả lập xem quảng cáo
         payload = {"ad_watched": True, "clicked": True, "watch_start_ms": watch_start}
         data = self._call_api('/api/eggs/claim-daily', payload=payload, include_init_in_body=True)
         if data and data.get('ok'):
             reward = data.get('reward', 0)
             balance = data.get('balance', 0)
-            self.log(f"📅 Daily +{reward} | Bal: {balance}")
+            self.log(f"📅 +{reward} | Bal: {balance}")
             return True
-        self.log("📅 Daily none")
+        # Nếu lỗi 403 hoặc auth, thử refresh initData
+        if data and data.get('error') == 'Unauthorized':
+            self.log("Daily: refresh initData")
+            if self.refresh_init_data():
+                return self.claim_daily()
+        self.log("📅 None")
         return False
 
     def claim_multi_ad(self, ad_type='adsgram', slot_index=0, retry=0):
