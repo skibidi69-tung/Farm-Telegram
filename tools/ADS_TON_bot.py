@@ -92,7 +92,6 @@ class AdstonBot:
         except:
             return False
 
-    # 🎯 HÀM SWAP ĐIỂM SANG TON (ĐÃ FIX LỖI NHẬN DIỆN THÀNH CÔNG CỦA GAME)
     async def swap_gem_to_ton(self, user_id):
         """Kiểm tra số dư điểm hiện tại, nếu lớn hơn hoặc bằng 100 thì tiến hành đổi sang TON"""
         try:
@@ -105,7 +104,7 @@ class AdstonBot:
             return False
 
         amount_to_swap = int((current_balance // 100) * 100)
-        log(f"[{self.name}] 💱 Phát hiện tài sản đủ điều kiện. Đang gửi lệnh swap {amount_to_swap} Gems sang TON...", "cyan")
+        log(f"[{self.name}] 💱 Phát hiện tài sản đủ điều kiện lúc khởi động. Đang gửi lệnh swap {amount_to_swap} Gems sang TON...", "cyan")
 
         if not self.csrf:
             await self.fetch_csrf()
@@ -123,12 +122,10 @@ class AdstonBot:
             resp = self.session.post(f"{BASE_URL}/swap/gem-to-ton", json=payload_swap, headers=headers, timeout=15)
             result = resp.json()
             
-            # Ép kiểu chuỗi phản hồi để check tổng thể chống dev game trả text ảo
             msg = str(result.get("message", "")).lower()
             is_ok = result.get("success") or result.get("ok") or "success" in msg
 
             if is_ok:
-                # Cập nhật số dư điểm mới từ máy chủ sau khi đổi tiền thành công
                 if "new_balance" in result:
                     self.balance = str(result.get("new_balance"))
                 elif "balance" in result:
@@ -182,10 +179,10 @@ class AdstonBot:
             log(f"[{self.name}] Lỗi đồng bộ: {e}", "red")
             return
 
-        # Thực hiện đổi tiền ngay khi bắt đầu chạy nếu số dư > 100 Gems
+        # 🎯 CHỈ SWAP DUY NHẤT 1 LẦN KHI BẮT ĐẦU CHẠY KHỞI ĐỘNG TOOL
         await self.swap_gem_to_ton(user_id)
 
-        # ===== VÒNG LẶP VÔ TẬN Tuyệt Đối =====
+        # ===== VÒNG LẶP VÔ TẬN Tuyệt Đối (CHỈ TẬP TRUNG FARM) =====
         while True:
             if not self.csrf and not await self.fetch_csrf():
                 log(f"[{self.name}] ⚠️ Lỗi lấy CSRF, thử lại sau 10s...", "yellow")
@@ -213,8 +210,7 @@ class AdstonBot:
                         self.today_ads = int(user.get("today_ads", 0))
                         self.ads_limit = int(user.get("ads_limit", 2))
                         log(f"[{self.name}] 🔄 Đã reset ngày mới! Balance: {self.balance} | Ads: {self.today_ads}/{self.ads_limit}", "cyan")
-                        
-                        await self.swap_gem_to_ton(user_id)
+                        # ĐÃ GỠ LỆNH SWAP Ở ĐÂY
                 except Exception as e:
                     log(f"[{self.name}] Lỗi đồng bộ sau ngủ: {e}", "red")
                     await asyncio.sleep(300) 
@@ -246,8 +242,7 @@ class AdstonBot:
                     self.balance = str(result.get("new_balance", self.balance))
                     self.today_ads += 1
                     log(f"[{self.name}] 💰 Thành công +50k Points | Balance: {self.balance}", "green")
-                    
-                    await self.swap_gem_to_ton(user_id)
+                    # ĐÃ GỠ LỆNH SWAP Ở ĐÂY
                 else:
                     msg_claim = result.get("message", "Lỗi không xác định")
                     log(f"[{self.name}] ⚠️ Claim thất bại: {msg_claim} | Thử lại sau 30s...", "yellow")
