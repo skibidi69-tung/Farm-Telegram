@@ -89,14 +89,13 @@ class TRewardsSpammer:
         except Exception: pass
 
     def auto_spin(self):
-        """Hàm vắt kiệt toàn bộ số lượt Spin đang có"""
         if self.spins <= 0:
             log_to_gui(f"[{self.name}] 🎰 Không có lượt Spin nào khả dụng.", "yellow")
             return
         log_to_gui(f"[{self.name}] 🎰 Đang tiến hành quay {self.spins} lượt Spin tích lũy...", "magenta")
         while self.spins > 0:
             try:
-                time.sleep(1.2) # Giữ khoảng cách giữa các lượt quay tránh lỗi
+                time.sleep(1.2)
                 resp = self.session.post(f"{BASE_URL}/api/spin", json={"init_data": self.init_data}, headers=self.headers, timeout=15)
                 if resp.status_code == 200 and resp.json().get("success"):
                     data = resp.json()
@@ -133,7 +132,6 @@ class TRewardsSpammer:
             except Exception: pass
 
     def force_spam_ad(self, endpoint: str, ad_id: str):
-        """Hàm nện thẳng vào API ad không giới hạn"""
         try:
             resp = self.session.post(f"{BASE_URL}{endpoint}", json={"init_data": self.init_data, "ad_id": ad_id}, headers=self.headers, timeout=12)
             if resp.status_code == 200:
@@ -162,16 +160,16 @@ class TRewardsSpammer:
             return
             
         if self.login():
-            # ---- BƯỚC 1: ĐIỂM DANH CHUỖI ĐỂ KIẾM THÊM SPIN ----
+            # ---- BƯỚC 1: ĐIỂM DANH CHUỖI ----
             log_to_gui(f"[{self.name}] 📑 Bắt đầu chạy Streak...", "magenta")
             self.claim_streak()
             
-            # ---- BƯỚC 2: CÀY LUÔN NHIỆM VỤ NGÀY ĐỂ GOM HẾT SPIN THỪA ----
+            # ---- BƯỚC 2: CÀY NHIỆM VỤ NGÀY ----
             log_to_gui(f"[{self.name}] 📑 Làm nhiệm vụ Daily & Advertiser Tasks...", "magenta")
             self.claim_daily_tasks()
             self.claim_advertiser_tasks()
             
-            # ---- BƯỚC 3: GIẢI QUYẾT SPIN TRƯỚC KHI XEM ADS ----
+            # ---- BƯỚC 3: QUAY SPIN ----
             log_to_gui(f"[{self.name}] 🎰 Đang kích hoạt luồng tự động Spin...", "magenta")
             self.auto_spin()
             
@@ -194,7 +192,7 @@ class TRewardsSpammer:
                 self.force_spam_ad("/api/watch-ad-ton", "ad_b4")
                 
                 loop_count += 1
-                time.sleep(2) # Nghỉ ngắn giữa các vòng tuần hoàn
+                time.sleep(2)
 
 def process_account(session_file):
     try:
