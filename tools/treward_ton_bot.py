@@ -15,9 +15,8 @@ BOT_USERNAME = 'treward_ton_bot'
 WEBAPP_URL = "https://trewards.duckdns.org/"
 SESSION_DIR = "sessions"   
 
-MAX_COIN_ROUNDS = 10         
-MAX_TON_ROUNDS = 50          
-COOLDOWN_ROUND = 61          
+# Giảm cooldown xuống tối thiểu để spam nhanh nhất có thể (tùy chỉnh nếu bị rate limit)
+COOLDOWN_BETWEEN_ADS = 2  
 
 API_ID = 28752231
 API_HASH = 'ec1c1f2c30e2f1855c3edee7e348480b'
@@ -27,16 +26,15 @@ if 'log_to_gui' not in globals():
         ts = datetime.now().strftime("%H:%M:%S")
         print(f"[{ts}] {message}")
 
-class TRewardsBot:
+class TRewardsSpammer:
     def __init__(self, session_file: str):
         self.session_file = session_file
         self.name = session_file.replace('.session', '')
         self.session = requests.Session()
         self.init_data = None
+        self.ton_balance = 0
         self.coins = 0
         self.spins = 0
-        self.ton_balance = 0
-        self.last_ad_time = 0
         self.headers = {
             'User-Agent': "Mozilla/5.0 (Linux; Android 12; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Mobile Safari/537.36 Telegram-Android/12.1.1",
             'Accept': "application/json, text/plain, */*",
@@ -76,110 +74,12 @@ class TRewardsBot:
             if resp.status_code == 200:
                 data = resp.json()
                 self.coins, self.spins, self.ton_balance = data.get("coins", 0), data.get("spins", 0), data.get("ton_balance", 0)
-                log_to_gui(f"[{self.name}] 🔐 Login OK! Ví: {self.coins} Xu | {self.ton_balance} TON | {self.spins} Spin", "green")
+                log_to_gui(f"[{self.name}] 🔐 Login OK! Ví: {self.coins} Xu | {self.ton_balance} TON", "green")
                 return True
             return False
         except Exception: return False
 
-    def claim_streak(self):
+    def force_spam_ad(self, endpoint: str, ad_id: str):
+        """Hàm nện thẳng vào API, không cần check giới hạn"""
         try:
-            resp = self.session.post(f"{BASE_URL}/api/claim-streak", json={"init_data": self.init_data}, headers=self.headers, timeout=15)
-            if resp.status_code == 200 and resp.json().get("success"):
-                self.spins += resp.json().get("spins_earned", 0)
-                log_to_gui(f"[{self.name}] 📅 Điểm danh chuỗi thành công", "green")
-        except Exception: pass
-
-    def claim_daily_tasks(self):
-        for task in ["checkin", "update", "share"]:
-            try:
-                time.sleep(0.3)
-                resp = self.session.post(f"{BASE_URL}/api/claim-daily-task", json={"init_data": self.init_data, "task_type": task}, headers=self.headers, timeout=15)
-                if resp.status_code == 200 and resp.json().get("success"):
-                    self.coins = resp.json().get("new_balance", self.coins)
-                    self.spins += resp.json().get("spins_earned", 0)
-                    log_to_gui(f"[{self.name}] ✅ Task '{task}' xong!", "green")
-            except Exception: pass
-
-    def claim_advertiser_tasks(self):
-        for task_id in [124, 123, 122, 95, 94, 93]:
-            try:
-                time.sleep(0.3)
-                resp = self.session.post(f"{BASE_URL}/api/claim-advertiser-daily", json={"init_data": self.init_data, "task_id": int(task_id)}, headers=self.headers, timeout=15)
-                if resp.status_code == 200 and resp.json().get("success"):
-                    self.coins = resp.json().get("new_balance", self.coins)
-                    self.spins += resp.json().get("spins_earned", 0)
-                    log_to_gui(f"[{self.name}] 💰 Adv Task {task_id} xong!", "green")
-            except Exception: pass
-
-    def watch_single_ad(self, endpoint: str, ad_id: str):
-        try:
-            resp = self.session.post(f"{BASE_URL}{endpoint}", json={"init_data": self.init_data, "ad_id": ad_id}, headers=self.headers, timeout=12)
-            if resp.status_code == 200 and resp.json().get("success"):
-                data = resp.json()
-                if "ton" in endpoint:
-                    self.ton_balance = data.get("new_balance", self.ton_balance)
-                    log_to_gui(f"[{self.name}] 💎 Ad '{ad_id}': +{data.get('ton_earned', 0)} TON | Tổng: {self.ton_balance} TON", "green")
-                else:
-                    self.coins = data.get("new_balance", self.coins)
-                    log_to_gui(f"[{self.name}] 💰 Ad '{ad_id}': +{data.get('coins_earned', 0)} Xu", "green")
-        except Exception: pass
-
-    def execute_ads_round(self, round_num: int):
-        time_passed = time.time() - self.last_ad_time
-        if time_passed < COOLDOWN_ROUND:
-            time.sleep(COOLDOWN_ROUND - time_passed)
-        log_to_gui(f"[{self.name}] 📺 Ads Vòng {round_num}/{MAX_TON_ROUNDS}...", "magenta")
-        if round_num <= MAX_COIN_ROUNDS:
-            self.watch_single_ad("/api/watch-ad", "ad_b1")
-            self.watch_single_ad("/api/watch-ad", "ad_b2")
-        if round_num <= MAX_TON_ROUNDS:
-            self.watch_single_ad("/api/watch-ad-ton", "ad_b3")
-            self.watch_single_ad("/api/watch-ad-ton", "ad_b4")
-        self.last_ad_time = time.time()
-
-    def auto_spin(self):
-        if self.spins <= 0: return
-        log_to_gui(f"[{self.name}] 🎰 Đang giải quyết {self.spins} lượt Spin...", "magenta")
-        while self.spins > 0:
-            try:
-                time.sleep(1.2)
-                resp = self.session.post(f"{BASE_URL}/api/spin", json={"init_data": self.init_data}, headers=self.headers, timeout=15)
-                if resp.status_code == 200 and resp.json().get("success"):
-                    self.coins = resp.json().get("new_balance", self.coins)
-                    self.spins = resp.json().get("remaining_spins", 0)
-                    log_to_gui(f"[{self.name}] 🎉 Spin trúng thưởng! Còn {self.spins} lượt", "green")
-                else: break
-            except Exception: break
-
-    def start_farm_flow(self):
-        log_to_gui(f"[{self.name}] Khởi chạy luồng farm...", "cyan")
-        self.fetch_init_data()
-        if not self.init_data: return
-        if self.login():
-            self.claim_streak()
-            self.claim_daily_tasks()
-            self.claim_advertiser_tasks()
-            self.execute_ads_round(1)
-            self.auto_spin()
-            for r in range(2, MAX_TON_ROUNDS + 1):
-                self.execute_ads_round(r)
-
-def process_account(session_file):
-    try:
-        bot = TRewardsBot(session_file)
-        bot.start_farm_flow()
-    except Exception: pass
-
-# ====================== HÀM ĐƯỢC GUI GỌI EXEC() ======================
-def run(session_files):
-    log_to_gui(f"🚀 [C36] Đang xử lý song song đa luồng...", "magenta")
-    with ThreadPoolExecutor(max_workers=min(len(session_files), 5)) as executor:
-        futures = [executor.submit(process_account, sfile) for sfile in session_files]
-        for future in as_completed(futures):
-            try: future.result()
-            except Exception: pass
-
-if __name__ == "__main__":
-    if os.path.exists(SESSION_DIR):
-        files = [f for f in os.listdir(SESSION_DIR) if f.endswith('.session')]
-        if files: run(files)
+            resp = self.session.post(f"{BASE_URL}{endpoint}", json={"init_data": self.init_data, "ad_id": ad_id},
