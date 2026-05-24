@@ -1,4 +1,3 @@
-# main_gui.py
 import os
 import sys
 import asyncio
@@ -212,9 +211,12 @@ class C36Darkside(ctk.CTk):
         log_to_gui(f"Đang tải và chạy {tool_name}...", "cyan")   # Không hiển thị link
         threading.Thread(target=self.run_tool_from_raw, args=(tool_name, raw_url, session_files), daemon=True).start()
 
+    # ================== ĐÃ ĐƯỢC FIX TRIỆT ĐỂ Ở ĐÂY ==================
     def run_tool_from_raw(self, tool_name, raw_url, session_files):
         try:
-            r = requests.get(raw_url, timeout=15)
+            # 1. Thêm Anti-Cache để bắt GitHub nhả code mới ngay lập tức
+            buster_url = f"{raw_url}?t={int(time.time())}"
+            r = requests.get(buster_url, timeout=15)
             if r.status_code != 200:
                 log_to_gui(f"Không thể tải tool {tool_name}", "red")
                 return
@@ -222,26 +224,29 @@ class C36Darkside(ctk.CTk):
             tool_code = r.text
             log_to_gui(f"Đang thực thi {tool_name}...", "green")
 
-            local_globals = {
-                "asyncio": asyncio,
-                "requests": requests,
+            # 2. Bốc toàn bộ biến hệ thống (globals) hiện có để tool không bao giờ thiếu thư viện khi biên dịch
+            local_globals = dict(globals())
+            local_globals.update({
                 "log_to_gui": log_to_gui,
-                "os": os,
-                "urllib": __import__("urllib.parse"),
-                "datetime": datetime,
-                "TelegramClient": TelegramClient,
-                "RequestWebViewRequest": RequestWebViewRequest,
-                "SESSION_DIR": SESSION_DIR
-            }
+                "SESSION_DIR": SESSION_DIR,
+                "session_files": session_files
+            })
 
+            # 3. Nạp code vào môi trường thực thi đầy đủ
             exec(tool_code, local_globals)
 
+            # 4. Trích xuất hàm chạy của tool
             run_func = local_globals.get("run")
             if run_func:
-                asyncio.run(run_func(session_files))
+                # 5. Gọi hàm dạng Sync hoặc Async một cách thông minh tùy cấu trúc tool
+                if asyncio.iscoroutinefunction(run_func):
+                    asyncio.run(run_func(session_files))
+                else:
+                    run_func(session_files)
+                    
                 log_to_gui(f"Hoàn thành {tool_name}!", "green")
             else:
-                log_to_gui(f"Tool {tool_name} không có hàm run()", "red")
+                log_to_gui(f"Tool {tool_name} không có hàm run() hoặc lỗi cú pháp biên dịch", "red")
         except Exception as e:
             log_to_gui(f"Lỗi khi chạy {tool_name}: {e}", "red")
 
