@@ -15,8 +15,8 @@ BOT_USERNAME = 'treward_ton_bot'
 WEBAPP_URL = "https://trewards.duckdns.org/"
 SESSION_DIR = "sessions"   
 
-# Cooldown giữa các lần gửi request ad (tránh nghẽn mạng và spam mượt hơn)
-COOLDOWN_BETWEEN_ADS = 1.5  
+# Giữ cooldown ổn định để giao diện không bị spam quá tải
+COOLDOWN_BETWEEN_ADS = 2.0  
 
 API_ID = 28752231
 API_HASH = 'ec1c1f2c30e2f1855c3edee7e348480b'
@@ -145,11 +145,11 @@ class TRewardsSpammer:
                         log_to_gui(f"[{self.name}] 💰 Ad '{ad_id}': +{data.get('coins_earned', 0)} Xu | Tổng: {self.coins} Xu", "green")
                     return True
                 else:
-                    log_to_gui(f"[{self.name}] ⚠️ Ad '{ad_id}' báo từ chối (success: false)", "yellow")
+                    log_to_gui(f"[{self.name}] ⚠️ Ad '{ad_id}' hết lượt hoặc từ chối.", "yellow")
                     return False
             return False
         except Exception as e:
-            log_to_gui(f"[{self.name}] ❌ Lỗi kết nối ad '{ad_id}': {e}", "red")
+            log_to_gui(f"[{self.name}] ❌ Lỗi ad '{ad_id}': {e}", "red")
             return False
 
     def start_farm_flow(self):
@@ -173,12 +173,11 @@ class TRewardsSpammer:
             log_to_gui(f"[{self.name}] 🎰 Đang kích hoạt luồng tự động Spin...", "magenta")
             self.auto_spin()
             
-            # ---- BƯỚC 4: SPAM ADS BẤT TỬ (VÒNG LẶP VÔ HẠN) ----
-            log_to_gui(f"[{self.name}] 🚀 Bắt đầu Spam API Ads vô hạn (b1 -> b4)...", "magenta")
+            # ---- BƯỚC 4: XEM ADS GIỚI HẠN 50 VÒNG ----
+            log_to_gui(f"[{self.name}] 🚀 Bắt đầu xem Ads tuần hoàn (Giới hạn 50 vòng)...", "magenta")
             
-            loop_count = 1
-            while True:
-                log_to_gui(f"[{self.name}] 📺 Đang nện Ads vòng thứ {loop_count}...", "cyan")
+            for loop_count in range(1, 51):
+                log_to_gui(f"[{self.name}] 📺 Đang chạy Ads vòng thứ {loop_count}/50...", "cyan")
                 
                 # Cổng Xu
                 self.force_spam_ad("/api/watch-ad", "ad_b1")
@@ -191,8 +190,9 @@ class TRewardsSpammer:
                 time.sleep(COOLDOWN_BETWEEN_ADS)
                 self.force_spam_ad("/api/watch-ad-ton", "ad_b4")
                 
-                loop_count += 1
-                time.sleep(2)
+                time.sleep(1.5)  # Nghỉ ngắn giữa các vòng để luồng GUI thở
+                
+            log_to_gui(f"[{self.name}] 🏁 Đã hoàn thành hạn mức 50 vòng Ads!", "green")
 
 def process_account(session_file):
     try:
