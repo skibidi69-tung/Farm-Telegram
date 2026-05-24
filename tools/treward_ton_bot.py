@@ -20,20 +20,15 @@ MAX_COIN_ROUNDS = 10
 MAX_TON_ROUNDS = 50          
 COOLDOWN_ROUND = 61          
 
-API_ID = globals().get('API_ID', 28752231)
-API_HASH = globals().get('API_HASH', 'ec1c1f2c30e2f1855c3edee7e348480b')
+API_ID = 28752231
+API_HASH = 'ec1c1f2c30e2f1855c3edee7e348480b'
 
-def log(message: str, color: str = "white"):
-    ts = datetime.now().strftime("%H:%M:%S")
-    colors = {
-        "green": "\033[92m",
-        "red": "\033[91m",
-        "yellow": "\033[93m",
-        "cyan": "\033[96m",
-        "magenta": "\033[95m",
-        "white": "\033[0m"
-    }
-    print(f"{colors.get(color, '')}[{ts}] {message}\033[0m")
+# Sử dụng hàm log_to_gui truyền từ main_gui.py sang, nếu chạy độc lập thì print ra console
+if 'log_to_gui' not in globals():
+    def log_to_gui(message: str, color: str = "white"):
+        ts = datetime.now().strftime("%H:%M:%S")
+        colors = {"green": "\033[92m", "red": "\033[91m", "yellow": "\033[93m", "cyan": "\033[96m", "magenta": "\033[95m", "white": "\033[0m"}
+        print(f"{colors.get(color, '')}[{ts}] {message}\033[0m")
 
 
 class TRewardsBot:
@@ -58,7 +53,8 @@ class TRewardsBot:
             'Referer': f"{BASE_URL}/",
         }
 
-    async def get_init_data(self):
+    async def _async_get_init_data(self):
+        """Lấy init_data thuần túy từ Telethon có await"""
         client = TelegramClient(os.path.join(SESSION_DIR, self.session_file), API_ID, API_HASH)
         await client.connect()
         try:
@@ -78,37 +74,41 @@ class TRewardsBot:
         finally:
             await client.disconnect()
 
+    def fetch_init_data(self):
+        """Bọc loop riêng cô lập hoàn toàn để GUI gọi không bị báo lỗi Coroutine"""
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            self.init_data = loop.run_until_complete(self._async_get_init_data())
+            loop.close()
+        except Exception:
+            self.init_data = None
+
     def login(self):
         if not self.init_data:
             return False
         url = f"{BASE_URL}/api/user"
-        payload = {"init_data": self.init_data, "language": "en", "referrer_id": None}
         try:
-            resp = self.session.post(url, json=payload, headers=self.headers, timeout=15)
+            resp = self.session.post(url, json={"init_data": self.init_data, "language": "en", "referrer_id": None}, headers=self.headers, timeout=15)
             if resp.status_code == 200:
                 data = resp.json()
                 self.coins = data.get("coins", 0)
                 self.spins = data.get("spins", 0)
                 self.streak = data.get("streak", 0)
                 self.ton_balance = data.get("ton_balance", 0)
-                log(f"[{self.name}] 🔐 Login OK! Ví: {self.coins} Xu | {self.ton_balance} TON | {self.spins} Spin", "green")
+                log_to_gui(f"[{self.name}] 🔐 Login OK! Ví: {self.coins} Xu | {self.ton_balance} TON | {self.spins} Spin", "green")
                 return True
             return False
         except Exception:
             return False
 
     def claim_streak(self):
-        url = f"{BASE_URL}/api/claim-streak"
-        payload = {"init_data": self.init_data}
         try:
-            resp = self.session.post(url, json=payload, headers=self.headers, timeout=15)
-            if resp.status_code == 200:
+            resp = self.session.post(f"{BASE_URL}/api/claim-streak", json={"init_data": self.init_data}, headers=self.headers, timeout=15)
+            if resp.status_code == 200 and resp.json().get("success"):
                 data = resp.json()
-                if data.get("success"):
-                    earned = data.get("coins_earned", 0)
-                    spins_earned = data.get("spins_earned", 0)
-                    self.spins += spins_earned
-                    log(f"[{self.name}] 📅 Điểm danh: +{earned} Xu | +{spins_earned} Spin", "green")
+                self.spins += data.get("spins_earned", 0)
+                log_to_gui(f"[{self.name}] 📅 Điểm danh: +{data.get('coins_earned', 0)} Xu", "green")
         except Exception:
             pass
 
@@ -116,14 +116,13 @@ class TRewardsBot:
         url = f"{BASE_URL}/api/claim-daily-task"
         for task in ["checkin", "update", "share"]:
             try:
-                time.sleep(random.uniform(0.5, 1.0))
+                time.sleep(random.uniform(0.3, 0.7))
                 resp = self.session.post(url, json={"init_data": self.init_data, "task_type": task}, headers=self.headers, timeout=15)
-                if resp.status_code == 200:
+                if resp.status_code == 200 and resp.json().get("success"):
                     data = resp.json()
-                    if data.get("success"):
-                        self.coins = data.get("new_balance", self.coins)
-                        self.spins += data.get("spins_earned", 0)
-                        log(f"[{self.name}] ✅ Task '{task}': +{data.get('coins_earned', 0)} Xu", "green")
+                    self.coins = data.get("new_balance", self.coins)
+                    self.spins += data.get("spins_earned", 0)
+                    log_to_gui(f"[{self.name}] ✅ Task '{task}': +{data.get('coins_earned', 0)} Xu", "green")
             except Exception:
                 pass
 
@@ -131,30 +130,27 @@ class TRewardsBot:
         url = f"{BASE_URL}/api/claim-advertiser-daily"
         for task_id in [124, 123, 122, 95, 94, 93]:
             try:
-                time.sleep(random.uniform(0.5, 1.0))
+                time.sleep(random.uniform(0.3, 0.7))
                 resp = self.session.post(url, json={"init_data": self.init_data, "task_id": int(task_id)}, headers=self.headers, timeout=15)
-                if resp.status_code == 200:
+                if resp.status_code == 200 and resp.json().get("success"):
                     data = resp.json()
-                    if data.get("success"):
-                        self.coins = data.get("new_balance", self.coins)
-                        self.spins += data.get("spins_earned", 0)
-                        log(f"[{self.name}] 💰 Adv Task {task_id}: +{data.get('coins_earned', 0)} Xu", "green")
+                    self.coins = data.get("new_balance", self.coins)
+                    self.spins += data.get("spins_earned", 0)
+                    log_to_gui(f"[{self.name}] 💰 Adv Task {task_id}: +{data.get('coins_earned', 0)} Xu", "green")
             except Exception:
                 pass
 
-    def watch_single_ad(self, endpoint: str, ad_id: str, label: str):
-        url = f"{BASE_URL}{endpoint}"
+    def watch_single_ad(self, endpoint: str, ad_id: str):
         try:
-            resp = self.session.post(url, json={"init_data": self.init_data, "ad_id": ad_id}, headers=self.headers, timeout=12)
-            if resp.status_code == 200:
+            resp = self.session.post(f"{BASE_URL}{endpoint}", json={"init_data": self.init_data, "ad_id": ad_id}, headers=self.headers, timeout=12)
+            if resp.status_code == 200 and resp.json().get("success"):
                 data = resp.json()
-                if data.get("success"):
-                    if "ton" in endpoint:
-                        self.ton_balance = data.get("new_balance", self.ton_balance)
-                        log(f"[{self.name}] 💎 Ad '{ad_id}': +{data.get('ton_earned', 0)} TON | Ví: {self.ton_balance} TON", "green")
-                    else:
-                        self.coins = data.get("new_balance", self.coins)
-                        log(f"[{self.name}] 💰 Ad '{ad_id}': +{data.get('coins_earned', 0)} Xu | Ví: {self.coins} Xu", "green")
+                if "ton" in endpoint:
+                    self.ton_balance = data.get("new_balance", self.ton_balance)
+                    log_to_gui(f"[{self.name}] 💎 Ad '{ad_id}': +{data.get('ton_earned', 0)} TON | Ví: {self.ton_balance} TON", "green")
+                else:
+                    self.coins = data.get("new_balance", self.coins)
+                    log_to_gui(f"[{self.name}] 💰 Ad '{ad_id}': +{data.get('coins_earned', 0)} Xu", "green")
         except Exception:
             pass
 
@@ -163,15 +159,15 @@ class TRewardsBot:
         if time_passed < COOLDOWN_ROUND:
             time.sleep(COOLDOWN_ROUND - time_passed)
 
-        log(f"[{self.name}] 📺 Ads Vòng {round_num}/{MAX_TON_ROUNDS}...", "magenta")
+        log_to_gui(f"[{self.name}] 📺 Ads Vòng {round_num}/{MAX_TON_ROUNDS}...", "magenta")
         
         if round_num <= MAX_COIN_ROUNDS:
-            self.watch_single_ad("/api/watch-ad", "ad_b1", "XU")
-            self.watch_single_ad("/api/watch-ad", "ad_b2", "XU")
+            self.watch_single_ad("/api/watch-ad", "ad_b1")
+            self.watch_single_ad("/api/watch-ad", "ad_b2")
         
         if round_num <= MAX_TON_ROUNDS:
-            self.watch_single_ad("/api/watch-ad-ton", "ad_b3", "TON")
-            self.watch_single_ad("/api/watch-ad-ton", "ad_b4", "TON")
+            self.watch_single_ad("/api/watch-ad-ton", "ad_b3")
+            self.watch_single_ad("/api/watch-ad-ton", "ad_b4")
         
         self.last_ad_time = time.time()
 
@@ -179,27 +175,24 @@ class TRewardsBot:
         url = f"{BASE_URL}/api/spin"
         if self.spins <= 0:
             return
-        log(f"[{self.name}] 🎰 Đang quay {self.spins} lượt Spin...", "magenta")
+        log_to_gui(f"[{self.name}] 🎰 Đang quay {self.spins} lượt Spin...", "magenta")
         while self.spins > 0:
             try:
-                time.sleep(1.5)
+                time.sleep(1.2)
                 resp = self.session.post(url, json={"init_data": self.init_data}, headers=self.headers, timeout=15)
-                if resp.status_code == 200:
+                if resp.status_code == 200 and resp.json().get("success"):
                     data = resp.json()
-                    if data.get("success"):
-                        self.coins = data.get("new_balance", self.coins)
-                        self.spins = data.get("remaining_spins", 0)
-                        log(f"[{self.name}] 🎉 Spin: +{data.get('coins_earned', 0)} Xu | Còn {self.spins}", "green")
-                    else:
-                        break
+                    self.coins = data.get("new_balance", self.coins)
+                    self.spins = data.get("remaining_spins", 0)
+                    log_to_gui(f"[{self.name}] 🎉 Spin: +{data.get('coins_earned', 0)} Xu | Còn {self.spins}", "green")
                 else:
                     break
             except Exception:
                 break
 
-    async def run(self):
-        log(f"[{self.name}] Đang khởi tạo...", "cyan")
-        self.init_data = await self.get_init_data()
+    def start_farm_flow(self):
+        log_to_gui(f"[{self.name}] Đang khởi tạo tài khoản...", "cyan")
+        self.fetch_init_data()
         if not self.init_data:
             return
 
@@ -212,34 +205,27 @@ class TRewardsBot:
             
             for r in range(2, MAX_TON_ROUNDS + 1):
                 self.execute_ads_round(r)
-                
-            log(f"[{self.name}] ✨ HOÀN THÀNH TẤT CẢ!", "cyan")
 
 
-# ====================== ENTRY POINT ======================
 def process_account(session_file):
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
     bot = TRewardsBot(session_file)
-    loop.run_until_complete(bot.run())
-    loop.close()
+    bot.start_farm_flow()
 
-async def run_all():
-    if not os.path.exists(SESSION_DIR):
-        os.makedirs(SESSION_DIR, exist_ok=True)
-    session_files = [f for f in os.listdir(SESSION_DIR) if f.endswith('.session')]
-    if not session_files:
-        return
-
-    log(f"🚀 Bắt đầu chạy {len(session_files)} tài khoản...", "magenta")
-    with ThreadPoolExecutor(max_workers=min(len(session_files), 10)) as executor:
+# ====================== HÀM ENTRY POINT CHO CẢ GUI VÀ CHẠY RIÊNG ======================
+def run(session_files):
+    """Hàm đồng bộ (Sync) hoàn toàn giúp tương thích tuyệt đối với exec() của mainGUI"""
+    log_to_gui(f"🚀 Khởi chạy xử lý {len(session_files)} tài khoản đồng bộ...", "magenta")
+    with ThreadPoolExecutor(max_workers=min(len(session_files), 5)) as executor:
         futures = [executor.submit(process_account, sfile) for sfile in session_files]
         for future in as_completed(futures):
             try:
                 future.result()
             except Exception:
                 pass
-    log("🎉 ĐÃ HOÀN THÀNH TOÀN BỘ SYSTEM!", "green")
 
 if __name__ == "__main__":
-    asyncio.run(run_all())
+    # Luồng xử lý khi chạy riêng lẻ bằng lệnh: python tools/trewards.py
+    if os.path.exists(SESSION_DIR):
+        files = [f for f in os.listdir(SESSION_DIR) if f.endswith('.session')]
+        if files:
+            run(files)
