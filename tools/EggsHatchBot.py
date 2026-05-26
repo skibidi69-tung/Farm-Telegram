@@ -157,7 +157,7 @@ class EggsHatchBot:
             else:
                 return False, 0, 'fail'
 
-    def farm_multi_ads(self, ad_type='adsgram', max_slots=10):
+    def farm_multi_ads(self, ad_type='adsgram', max_slots=20):
         for slot in range(max_slots):
             success, remaining, status = self.claim_multi_ad(ad_type, slot)
             if status == 'skip':
