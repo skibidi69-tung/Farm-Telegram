@@ -238,14 +238,22 @@ class EggsHatchBot:
         return False, 0, 6
 
     def farm_eggs(self):
-        """Farm common egg: loop tối đa 6 lần/ngày"""
+        """Farm common egg: loop tối đa 6 lần/ngày, nếu lỗi đợi 1h thử lại"""
         self.log("🥚 Farm common egg (max 6/ngày)...")
-        for i in range(6):
+        claimed = 0
+
+        while claimed < 6:
             success, ct, md = self.watch_and_claim_egg()
-            if success and ct >= md:
-                self.log(f"🏁 Hết lượt ({ct}/{md})")
-                break
-            time.sleep(random.uniform(3, 6))
+            if success:
+                claimed = ct
+                if ct >= md:
+                    self.log(f"🏁 Hết lượt ({ct}/{md})")
+                    break
+                time.sleep(random.uniform(3, 6))
+            else:
+                self.log("⏳ Lỗi, đợi 1 tiếng thử lại...")
+                time.sleep(3600)  # 1 tiếng
+
         self.log("✅ Egg farm done")
 
     def run(self):
