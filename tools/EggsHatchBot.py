@@ -253,7 +253,7 @@ class EggsHatchBot:
             return
         self.swap_eggs_to_usdt()
         self.claim_daily()
-        self.farm_multi_ads('adsgram', 10)
+        self.farm_multi_ads('adsgram', 20)
         self.farm_multi_ads('monetag', 13)
         self.farm_task_ads(15)
         self.farm_egg_cycle()
