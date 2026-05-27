@@ -5,9 +5,11 @@ API_ID = 28752231
 API_HASH = 'ec1c1f2c30e2f1855c3edee7e348480b'
 SESSION_DIR = "sessions"
 TOOLS_RAW = {
-    "MineQuest": "https://raw.githubusercontent.com/skibidi69-tung/Farm-Telegram/main/tools/minequest_bot.py",
-    "CryptoClaim": "https://raw.githubusercontent.com/skibidi69-tung/Farm-Telegram/main/tools/crypto_claim_bot.py",
-    "EggsHatch": "https://raw.githubusercontent.com/skibidi69-tung/Farm-Telegram/main/tools/EggsHatchBot.py",
+    "ADS_TON_bot": "https://raw.githubusercontent.com/skibidi69-tung/Farm-Telegram/main/tools/ADS_TON_bot.py",
+    "notbux_bot": "https://raw.githubusercontent.com/skibidi69-tung/Farm-Telegram/main/tools/notbux_bot.py",
+    "EggsHatchBot": "https://raw.githubusercontent.com/skibidi69-tung/Farm-Telegram/main/tools/EggsHatchBot.py",
+    "treward_ton_bot": "https://raw.githubusercontent.com/skibidi69-tung/Farm-Telegram/main/tools/treward_ton_bot.py",
+    "GeneratorBot": "https://raw.githubusercontent.com/skibidi69-tung/Farm-Telegram/main/tools/GeneratorBot.py"
 }
 logq = queue.Queue()
 def log(m): logq.put(f"[{datetime.now().strftime('%H:%M:%S')}] {m}")
