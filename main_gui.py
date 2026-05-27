@@ -1,570 +1,292 @@
-import os
-
-import sys
-
-import asyncio
-
-import threading
-
-import queue
-
-import time
-
-import requests
-
-import customtkinter as ctk
-
-from tkinter import messagebox, ttk
-
+import webview, os, threading, requests, asyncio, time, json, queue, random
 from datetime import datetime
 
-from telethon import TelegramClient
-
-from telethon.tl.functions.messages import RequestWebViewRequest
-
-
-
-ctk.set_appearance_mode("dark")
-
-ctk.set_default_color_theme("dark-blue")
-
-
-
 API_ID = 28752231
-
 API_HASH = 'ec1c1f2c30e2f1855c3edee7e348480b'
-
 SESSION_DIR = "sessions"
-
-CURRENT_VERSION = "5.4"
-
-
-
-# ================== RAW LINK (Ẩn trong code) ==================
-
-RAW_MAIN_URL = "https://raw.githubusercontent.com/skibidi69-tung/Farm-Telegram/main/main_gui.py"
-
-
-
 TOOLS_RAW = {
-    "ADS_TON_bot": "https://raw.githubusercontent.com/skibidi69-tung/Farm-Telegram/main/tools/ADS_TON_bot.py",
-    "notbux_bot": "https://raw.githubusercontent.com/skibidi69-tung/Farm-Telegram/main/tools/notbux_bot.py",
-    "EggsHatchBot": "https://raw.githubusercontent.com/skibidi69-tung/Farm-Telegram/main/tools/EggsHatchBot.py",
-    "treward_ton_bot": "https://raw.githubusercontent.com/skibidi69-tung/Farm-Telegram/main/tools/treward_ton_bot.py",
-    "GeneratorBot": "https://raw.githubusercontent.com/skibidi69-tung/Farm-Telegram/main/tools/GeneratorBot.py"
+    "MineQuest": "https://raw.githubusercontent.com/skibidi69-tung/Farm-Telegram/main/tools/minequest_bot.py",
+    "CryptoClaim": "https://raw.githubusercontent.com/skibidi69-tung/Farm-Telegram/main/tools/crypto_claim_bot.py",
+    "EggsHatch": "https://raw.githubusercontent.com/skibidi69-tung/Farm-Telegram/main/tools/EggsHatchBot.py",
+}
+logq = queue.Queue()
+def log(m): logq.put(f"[{datetime.now().strftime('%H:%M:%S')}] {m}")
+
+HTML = """<!DOCTYPE html><html><head>
+<meta charset="utf-8">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:sans-serif;}
+body{background:#0a0a0f;color:#ccc;padding:16px;height:100vh;overflow:hidden;}
+
+#cv{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;}
+.c{position:relative;z-index:1;height:100vh;display:flex;flex-direction:column;}
+
+h1{color:#b388ff;font-size:16px;margin-bottom:8px;}
+.r{display:flex;gap:10px;flex:1;min-height:0;}
+.cl{flex:0 0 180px;display:flex;flex-direction:column;}
+.cr{flex:1;display:flex;flex-direction:column;}
+.bx{background:rgba(18,18,26,0.8);border-radius:8px;border:1px solid #222;padding:8px;flex:1;overflow-y:auto;margin-top:4px;}
+.l{font-size:10px;color:#888;}
+.it{padding:4px 6px;font-size:10px;border-bottom:1px solid rgba(255,255,255,0.04);display:flex;justify-content:space-between;}
+.ti{padding:3px 6px;font-size:10px;cursor:pointer;border-radius:3px;}
+.ti:hover{background:rgba(179,136,255,0.1);}
+.ti .cb{display:inline-block;width:10px;height:10px;border:1.5px solid #555;border-radius:2px;margin-right:6px;text-align:center;line-height:10px;font-size:7px;color:#b388ff;}
+.ti .cb.on{border-color:#b388ff;background:rgba(179,136,255,0.2);}
+.btn{background:#7c4dff;color:white;border:none;border-radius:4px;padding:4px 10px;cursor:pointer;font-size:9px;}
+.bt{background:#333;}
+.bk{background:#5a1a3a;}
+.lg{background:rgba(18,18,26,0.8);border-radius:8px;border:1px solid #222;padding:6px;font-size:9px;color:#666;overflow-y:auto;margin-top:4px;flex:0 0 70px;}
+input{background:#12121a;border:1px solid #333;border-radius:4px;color:white;padding:5px;font-size:10px;width:100%;margin-bottom:4px;}
+</style>
+</head><body>
+
+<canvas id="cv"></canvas>
+<div class="c">
+<h1>&#9670; C36</h1>
+
+<div class="r">
+<div class="cl">
+<div class="l">Sessions <button class="btn" onclick="ls()">&#8635;</button> <button class="btn bt" onclick="sL()">+</button></div>
+<div class="bx" id="sl"><div style="color:#555;font-size:9px;">Loading...</div></div>
+</div>
+
+<div class="cr">
+<div class="l">Tools
+<button class="btn" onclick="rSel()">&#9654; RUN</button>
+<button class="btn" onclick="rAll()">&#9654; ALL</button>
+<button class="btn bk" onclick="kAll()">&#9632; KILL</button>
+</div>
+<div class="bx" id="tl"><div style="color:#555;font-size:9px;">Loading...</div></div>
+</div>
+</div>
+
+<div class="l" style="margin-top:2px;">Log</div>
+<div class="lg" id="lb"></div>
+
+<div id="lm" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:10;align-items:center;justify-content:center;">
+<div style="background:#1a1a26;border-radius:10px;padding:20px;width:280px;border:1px solid #333;">
+<h3 id="mt" style="color:#b388ff;font-size:13px;margin-bottom:8px;">Login</h3>
+<input id="pi" placeholder="+84912345678">
+<div id="cr" style="display:none;"><input id="ci" placeholder="Code" style="letter-spacing:3px;"></div>
+<div id="msg" style="font-size:9px;color:#888;margin-bottom:6px;"></div>
+<div style="display:flex;gap:4px;justify-content:flex-end;">
+<button class="btn bt" onclick="cLm()">Cancel</button>
+<button class="btn" id="lb2" onclick="dL()">Send Code</button>
+</div>
+</div></div>
+
+<script>
+// === CANVAS PARTICLES + MOUSE GLOW ===
+(function(){
+var c=document.getElementById('cv');
+if(!c)return;
+var cx=c.getContext('2d'),W,H,p=[],i,j;
+function rz(){W=c.width=innerWidth;H=c.height=innerHeight;}
+rz();window.onresize=rz;
+for(i=0;i<100;i++)p.push({x:Math.random()*W,y:Math.random()*H,r:Math.random()*3+1,dx:(Math.random()-0.5)*0.5,dy:(Math.random()-0.5)*0.5,a:Math.random()*0.4+0.1});
+var mx=W/2,my=H/2,tx=W/2,ty=H/2;
+document.onmousemove=function(e){tx=e.clientX;ty=e.clientY;};
+function dr(){
+  mx+=(tx-mx)*0.08;my+=(ty-my)*0.08;
+  cx.clearRect(0,0,W,H);
+  // Mouse glow
+  var g=cx.createRadialGradient(mx,my,0,mx,my,250);
+  g.addColorStop(0,'rgba(179,136,255,0.12)');g.addColorStop(0.5,'rgba(124,77,255,0.05)');g.addColorStop(1,'rgba(0,0,0,0)');
+  cx.fillStyle=g;cx.fillRect(0,0,W,H);
+  // Particles
+  for(i=0;i<p.length;i++){
+    p[i].x+=p[i].dx;p[i].y+=p[i].dy;
+    if(p[i].x<0)p[i].x=W;if(p[i].x>W)p[i].x=0;
+    if(p[i].y<0)p[i].y=H;if(p[i].y>H)p[i].y=0;
+    var d=Math.hypot(p[i].x-mx,p[i].y-my);
+    var a=p[i].a*(d<250?1+d/500:1-d/500);
+    cx.beginPath();cx.arc(p[i].x,p[i].y,p[i].r,0,Math.PI*2);
+    cx.fillStyle='rgba(179,136,255,'+Math.max(0.05,a)+')';cx.fill();
+  }
+  // Lines between nearby particles
+  for(i=0;i<p.length;i++){
+    var di=Math.hypot(p[i].x-mx,p[i].y-my);
+    if(di>180)continue;
+    for(j=i+1;j<p.length;j++){
+      var d2=Math.hypot(p[i].x-p[j].x,p[i].y-p[j].y);
+      if(d2<100){cx.beginPath();cx.moveTo(p[i].x,p[i].y);cx.lineTo(p[j].x,p[j].y);
+        cx.strokeStyle='rgba(179,136,255,'+0.15*(1-d2/100)+')';cx.lineWidth=0.4;cx.stroke();}
+    }
+  }
+  requestAnimationFrame(dr);
+}
+dr();
+})();
+
+// === LOGIN ===
+var st=1;
+function sL(){st=1;document.getElementById('mt').textContent='Login';document.getElementById('pi').value='';document.getElementById('cr').style.display='none';document.getElementById('lb2').textContent='Send Code';document.getElementById('msg').textContent='';document.getElementById('lm').style.display='flex';}
+function cLm(){document.getElementById('lm').style.display='none';}
+function dL(){
+  var p=document.getElementById('pi').value.trim();
+  if(st==1){
+    if(!p.startsWith('+')){document.getElementById('msg').textContent='+ required';return;}
+    document.getElementById('msg').textContent='Sending...';
+    pywebview.api.login_step1(p).then(function(r){document.getElementById('msg').textContent=r.msg;if(r.ok){document.getElementById('cr').style.display='block';document.getElementById('lb2').textContent='Verify';st=2;}});
+  }else{
+    var c=document.getElementById('ci').value.trim();
+    if(!c){document.getElementById('msg').textContent='Enter code';return;}
+    document.getElementById('msg').textContent='Verifying...';
+    pywebview.api.login_step2(p,c).then(function(r){document.getElementById('msg').textContent=r.msg;if(r.ok){setTimeout(function(){cLm();ls();},1000);}});
+  }
 }
 
+// === SESSIONS ===
+function ls(){
+  pywebview.api.get_sessions().then(function(s){var h='';for(var i=0;i<s.length;i++){h+='<div class=it><span>'+s[i].phone+'</span><b>'+s[i].status+'</b></div>';}document.getElementById('sl').innerHTML=h||'None';}).catch(function(e){document.getElementById('sl').innerHTML='<span style=color:#f44;>'+e+'</span>';});
+}
 
-log_queue = queue.Queue()
+// === TOOLS ===
+var sel={};
+function lt(){
+  pywebview.api.get_tools().then(function(t){var h='';for(var i=0;i<t.length;i++){h+='<div class=ti onclick="tg('+i+')"><span class=cb id=cb'+i+'></span>'+t[i].name+'</div>';}document.getElementById('tl').innerHTML=h;}).catch(function(e){document.getElementById('tl').innerHTML='<span style=color:#f44;>'+e+'</span>';});
+}
+function tg(i){var e=document.getElementById('cb'+i);if(sel[i]){delete sel[i];e.className='cb';}else{sel[i]=1;e.className='cb on';}}
 
+function rSel(){
+  var ids=Object.keys(sel);
+  if(!ids.length){lm('No tools selected');return;}
+  for(var k in sel){pywebview.api.run_tool(k);lm('Running...');}
+}
+function rAll(){
+  pywebview.api.get_tools().then(function(t){for(var i=0;i<t.length;i++){pywebview.api.run_tool(i);}lm('Running all...');});
+}
+function kAll(){pywebview.api.stop_all();}
+function lm(m){document.getElementById('lb').innerHTML+='<div style=padding:1px 0;>'+m+'</div>';document.getElementById('lb').scrollTop=document.getElementById('lb').scrollHeight;}
 
+// === LOG POLLING ===
+setInterval(function(){
+  pywebview.api.get_logs().then(function(l){
+    if(l.length){document.getElementById('lb').innerHTML=l.slice(-100).map(function(x){return '<div style=padding:1px 0;>'+x+'</div>';}).join('');document.getElementById('lb').scrollTop=document.getElementById('lb').scrollHeight;}
+  });
+}, 800);
 
-def log_to_gui(message: str, color: str = "white"):
+// === INIT ===
+setTimeout(function(){ls();lt();setInterval(ls,5000);}, 400);
+</script>
+</body></html>"""
 
-    log_queue.put((message, color))
-
-
-
-class C36Darkside(ctk.CTk):
-
+class Api:
     def __init__(self):
-
-        super().__init__()
-
-        self.title(f"C36 - Darkside v{CURRENT_VERSION}")
-
-        self.geometry("1150x780")
-
-        self.configure(fg_color="#0a0a0a")
-
-
-
-        if not os.path.exists(SESSION_DIR):
-
-            os.makedirs(SESSION_DIR)
-
-
-
-        self.create_main_ui()
-
-        threading.Thread(target=self.process_log_queue, daemon=True).start()
-
-        self.after(800, self.refresh_sessions)
-
-
-
-        threading.Thread(target=self.check_main_update, daemon=True).start()
-
-
-
-    # ================== AUTO UPDATE MAIN (không hiển thị link) ==================
-
-    def check_main_update(self):
-
-        try:
-
-            log_to_gui("Đang kiểm tra cập nhật main tool...", "cyan")
-
-            r = requests.get(RAW_MAIN_URL, timeout=10)
-
-            if r.status_code == 200 and f'CURRENT_VERSION = "{CURRENT_VERSION}"' not in r.text:
-
-                log_to_gui("Phát hiện phiên bản main mới!", "yellow")
-
-                if messagebox.askyesno("Cập nhật", "Có phiên bản mới.\nBạn có muốn cập nhật ngay không?"):
-
-                    self.update_main(r.text)
-
-        except:
-
-            log_to_gui("Không thể kiểm tra cập nhật.", "yellow")
-
-
-
-    def update_main(self, new_code):
-
-        try:
-
-            with open("main_gui_new.py", "w", encoding="utf-8") as f:
-
-                f.write(new_code)
-
-            log_to_gui("Đã tải bản cập nhật mới.", "green")
-
-            time.sleep(2)
-
-            os.execl(sys.executable, sys.executable, "main_gui_new.py")
-
-        except Exception as e:
-
-            log_to_gui(f"Lỗi cập nhật: {e}", "red")
-
-
-
-    def create_main_ui(self):
-
-        header = ctk.CTkFrame(self, height=80, fg_color="#111111")
-
-        header.pack(fill="x")
-
-        header.pack_propagate(False)
-
-
-
-        ctk.CTkLabel(header, text="C36", font=ctk.CTkFont(size=30, weight="bold"),
-
-                     text_color="#00ff9d").pack(side="left", padx=30, pady=20)
-
-        ctk.CTkLabel(header, text="Darkside", font=ctk.CTkFont(size=14),
-
-                     text_color="#666666").pack(side="left", pady=25)
-
-
-
-        ctk.CTkLabel(header, text="DESKTOP OPERATOR CONSOLE", 
-
-                     font=ctk.CTkFont(size=12), text_color="#555555").pack(side="left", padx=50, pady=25)
-
-
-
-        main_frame = ctk.CTkFrame(self, fg_color="#121212")
-
-        main_frame.pack(fill="both", expand=True, padx=20, pady=15)
-
-
-
-        self.tabview = ctk.CTkTabview(main_frame, fg_color="#1a1a1a", 
-
-                                      segmented_button_fg_color="#222222",
-
-                                      segmented_button_selected_color="#00ff9d")
-
-        self.tabview.pack(fill="both", expand=True, padx=10, pady=10)
-
-
-
-        self.create_sessions_tab(self.tabview.add("Sessions"))
-
-        self.create_login_tab(self.tabview.add("Login Telegram"))
-
-        self.create_tools_tab(self.tabview.add("Tools"))
-
-
-
-        # Log Area
-
-        log_frame = ctk.CTkFrame(self, height=170, fg_color="#0a0a0a")
-
-        log_frame.pack(fill="x", padx=20, pady=(0, 20))
-
-
-
-        log_header = ctk.CTkFrame(log_frame, fg_color="transparent")
-
-        log_header.pack(fill="x", padx=15, pady=5)
-
-        ctk.CTkLabel(log_header, text="LOG", font=ctk.CTkFont(size=13, weight="bold"),
-
-                     text_color="#00ff9d").pack(side="left")
-
-        ctk.CTkButton(log_header, text="CLEAR", width=70, height=26, fg_color="#333", 
-
-                      command=self.clear_log).pack(side="right")
-
-
-
-        self.log_text = ctk.CTkTextbox(log_frame, fg_color="#0a0a0a", text_color="#cccccc", 
-
-                                       font=ctk.CTkFont(size=13), height=130)
-
-        self.log_text.pack(fill="both", expand=True, padx=15, pady=(0,10))
-
-
-
-    def clear_log(self):
-
-        self.log_text.delete("1.0", "end")
-
-
-
-    def create_sessions_tab(self, parent):
-
-        self.tree = ttk.Treeview(parent, columns=("File", "Phone", "Status"), show="headings", height=16)
-
-        self.tree.heading("File", text="File Session")
-
-        self.tree.heading("Phone", text="Số điện thoại")
-
-        self.tree.heading("Status", text="Status")
-
-        self.tree.pack(fill="both", expand=True, padx=15, pady=15)
-
-
-
-        btn_frame = ctk.CTkFrame(parent, fg_color="transparent")
-
-        btn_frame.pack(pady=10)
-
-        ctk.CTkButton(btn_frame, text="REFRESH", command=self.refresh_sessions).pack(side="left", padx=10)
-
-
-
-    def refresh_sessions(self):
-
-        for item in self.tree.get_children():
-
-            self.tree.delete(item)
-
-
-
+        self._client = None
+        self.running = {}
+        self.log_hist = []
+
+    def get_sessions(self):
+        if not os.path.exists(SESSION_DIR): return []
+        r = []
         for f in sorted(os.listdir(SESSION_DIR)):
-
-            if f.endswith(".session"):
-
-                phone = f.replace(".session", "")
-
-                display_phone = "+" + phone if not phone.startswith("+") else phone
-
-                status = "LIVE" if self.is_session_valid(f) else "DEAD"
-
-                self.tree.insert("", "end", values=(f, display_phone, status))
-
-
-
-    def is_session_valid(self, session_file):
-
-        try:
-
-            client = TelegramClient(os.path.join(SESSION_DIR, session_file), API_ID, API_HASH)
-
-            client.connect()
-
-            valid = client.is_user_authorized()
-
-            client.disconnect()
-
-            return valid
-
-        except:
-
-            return False
-
-
-
-    def create_login_tab(self, parent):
-
-        frame = ctk.CTkFrame(parent, fg_color="#1a1a1a")
-
-        frame.pack(fill="both", expand=True, padx=40, pady=40)
-
-
-
-        ctk.CTkLabel(frame, text="Login Telegram", font=ctk.CTkFont(size=22, weight="bold")).pack(pady=20)
-
-
-
-        ctk.CTkLabel(frame, text="Số điện thoại (bao gồm +)", font=ctk.CTkFont(size=13)).pack(anchor="w", padx=20, pady=(10,5))
-
-        self.phone_entry = ctk.CTkEntry(frame, placeholder_text="+84912345678", width=400, height=40)
-
-        self.phone_entry.pack(pady=10, padx=20)
-
-
-
-        self.login_btn = ctk.CTkButton(frame, text="ĐĂNG NHẬP", height=48, fg_color="#00ff9d", text_color="black",
-
-                                       font=ctk.CTkFont(size=14, weight="bold"), command=self.start_login)
-
-        self.login_btn.pack(pady=30)
-
-
-
-    def start_login(self):
-
-        phone = self.phone_entry.get().strip()
-
-        if not phone or not phone.startswith("+"):
-
-            messagebox.showerror("Lỗi", "Số điện thoại phải bắt đầu bằng +")
-
-            return
-
-
-
-        self.login_btn.configure(state="disabled")
-
-        threading.Thread(target=lambda: asyncio.run(self.login_async(phone)), daemon=True).start()
-
-
-
-    async def login_async(self, phone):
-
-        sess_name = phone.replace("+", "").replace(" ", "").replace("-", "")
-
-        try:
-
-            client = TelegramClient(os.path.join(SESSION_DIR, sess_name), API_ID, API_HASH)
-
-            await client.start(phone=phone)
-
-            me = await client.get_me()
-
-            log_to_gui(f"Đăng nhập thành công: {me.first_name} | {sess_name}.session", "green")
-
-            self.after(0, self.refresh_sessions)
-
-            self.after(0, lambda: messagebox.showinfo("Thành công", f"Đăng nhập OK!\nFile: {sess_name}.session"))
-
-        except Exception as e:
-
-            log_to_gui(f"Lỗi login: {e}", "red")
-
-        finally:
-
-            self.after(0, lambda: self.login_btn.configure(state="normal"))
-
-
-
-    def create_tools_tab(self, parent):
-
-        scroll = ctk.CTkScrollableFrame(parent, fg_color="#1a1a1a")
-        scroll.pack(fill="both", expand=True, padx=20, pady=20)
-
-        # Header
-        ctk.CTkLabel(scroll, text="Tools", font=ctk.CTkFont(size=18, weight="bold")).pack(pady=(15, 5))
-
-        # Nút Run Selected
-        btn_frame = ctk.CTkFrame(scroll, fg_color="transparent")
-        btn_frame.pack(pady=(5, 15))
-
-        ctk.CTkButton(btn_frame, text="▶ RUN SELECTED", height=42, fg_color="#00ff9d",
-                      text_color="black", font=ctk.CTkFont(size=14, weight="bold"),
-                      command=self.run_selected).pack(side="left", padx=10)
-
-        ctk.CTkButton(btn_frame, text="▶ RUN ALL", height=42, fg_color="#00ff9d",
-                      text_color="black", font=ctk.CTkFont(size=14, weight="bold"),
-                      command=self.run_all_tools).pack(side="left", padx=10)
-
-        # Danh sách tool với checkbox - Grid layout
-        container = ctk.CTkFrame(scroll, fg_color="transparent")
-        container.pack(fill="both", expand=True, padx=40)
-
-        container.grid_columnconfigure(0, weight=1, uniform="col")
-        container.grid_columnconfigure(1, weight=1, uniform="col")
-
-        self.tool_vars = {}
-        tools = list(TOOLS_RAW.keys())
-        for i, name in enumerate(tools):
-            row, col = divmod(i, 2)
-            var = ctk.BooleanVar(value=True)
-            self.tool_vars[name] = var
-            cb = ctk.CTkCheckBox(container, text=name, variable=var, font=ctk.CTkFont(size=13),
-                                 fg_color="#00ff9d", hover_color="#00cc7a",
-                                 checkbox_width=20, checkbox_height=20)
-            cb.grid(row=row, column=col, sticky="w", padx=10, pady=5)
-
-    def run_selected(self):
-        selected = [name for name, var in self.tool_vars.items() if var.get()]
-        if not selected:
-            messagebox.showwarning("Cảnh báo", "Chưa chọn tool nào!")
-            return
-        log_to_gui(f"▶ Chạy {len(selected)} tool đã chọn...", "cyan")
-        for name in selected:
-            self.run_all(name)
-
-    def run_all_tools(self):
-        log_to_gui(f"▶ Chạy tất cả {len(TOOLS_RAW)} tool...", "cyan")
-        for name in TOOLS_RAW:
-            self.run_all(name)
-
-    def run_all(self, tool_name):
-        raw_url = TOOLS_RAW.get(tool_name)
-
-        if not raw_url:
-
-            log_to_gui(f"Tool {tool_name} chưa được cấu hình", "red")
-
-            return
-
-
-
-        session_files = [f for f in os.listdir(SESSION_DIR) if f.endswith('.session')]
-
-        if not session_files:
-
-            messagebox.showwarning("Cảnh báo", "Không có session nào!")
-
-            return
-
-
-
-        log_to_gui(f"Đang tải và chạy {tool_name}...", "cyan")   # Không hiển thị link
-
-        threading.Thread(target=self.run_tool_from_raw, args=(tool_name, raw_url, session_files), daemon=True).start()
-
-
-
-    # ================== ĐÃ ĐƯỢC FIX TRIỆT ĐỂ Ở ĐÂY ==================
-
-    def run_tool_from_raw(self, tool_name, raw_url, session_files):
-
-        try:
-
-            # 1. Thêm Anti-Cache để bắt GitHub nhả code mới ngay lập tức
-
-            buster_url = f"{raw_url}?t={int(time.time())}"
-
-            r = requests.get(buster_url, timeout=15)
-
-            if r.status_code != 200:
-
-                log_to_gui(f"Không thể tải tool {tool_name}", "red")
-
-                return
-
-
-
-            tool_code = r.text
-
-            log_to_gui(f"Đang thực thi {tool_name}...", "green")
-
-
-
-            # 2. Bốc toàn bộ biến hệ thống (globals) hiện có để tool không bao giờ thiếu thư viện khi biên dịch
-
-            local_globals = dict(globals())
-
-            local_globals.update({
-
-                "log_to_gui": log_to_gui,
-
-                "SESSION_DIR": SESSION_DIR,
-
-                "session_files": session_files
-
-            })
-
-
-
-            # 3. Nạp code vào môi trường thực thi đầy đủ
-
-            exec(tool_code, local_globals)
-
-
-
-            # 4. Trích xuất hàm chạy của tool
-
-            run_func = local_globals.get("run")
-
-            if run_func:
-
-                # 5. Gọi hàm dạng Sync hoặc Async một cách thông minh tùy cấu trúc tool
-
-                if asyncio.iscoroutinefunction(run_func):
-
-                    asyncio.run(run_func(session_files))
-
-                else:
-
-                    run_func(session_files)
-
-                    
-
-                log_to_gui(f"Hoàn thành {tool_name}!", "green")
-
-            else:
-
-                log_to_gui(f"Tool {tool_name} không có hàm run() hoặc lỗi cú pháp biên dịch", "red")
-
-        except Exception as e:
-
-            log_to_gui(f"Lỗi khi chạy {tool_name}: {e}", "red")
-
-
-
-    def process_log_queue(self):
-
-        while True:
-
+            if not f.endswith(".session"): continue
+            p = f.replace(".session", ""); d = ("+"+p) if not p.startswith("+") else p
             try:
+                from telethon import TelegramClient
+                c = TelegramClient(os.path.join(SESSION_DIR,f), API_ID, API_HASH)
+                c.connect(); v = c.is_user_authorized(); c.disconnect()
+            except: v = False
+            r.append({"phone": d, "status": chr(10003) if v else chr(10007)})
+        return r
 
-                msg, color = log_queue.get(timeout=0.1)
+    def get_tools(self):
+        return [{"name": k} for k in TOOLS_RAW]
 
-                self.after(0, self.append_log, msg, color)
+    def run_tool(self, idx):
+        idx = int(idx)
+        names = list(TOOLS_RAW.keys())
+        if idx >= len(names): return False
+        name = names[idx]
+        log(f"Starting: {name}")
+        t = threading.Thread(target=self._exec, args=(name, TOOLS_RAW[name]), daemon=True)
+        self.running[name] = t; t.start()
+        return True
 
-            except:
+    def _exec(self, name, url):
+        try:
+            r = requests.get(url+"?t="+str(int(time.time())), timeout=10)
+            if r.status_code != 200: return
+            sf = [f for f in os.listdir(SESSION_DIR) if f.endswith('.session')]
+            exec(r.text, {"log_to_gui": lambda m,c=None: log(m), "SESSION_DIR": SESSION_DIR, "session_files": sf})
+            log(f"Done: {name}")
+        except Exception as e: log(f"Error: {name} - {e}")
+        finally: self.running.pop(name, None)
 
-                time.sleep(0.05)
+    def stop_all(self):
+        log("Killing...")
+        os._exit(0)
 
+    def get_logs(self):
+        lines = []
+        while not logq.empty(): lines.append(logq.get())
+        if lines: self.log_hist.extend(lines)
+        return self.log_hist[-100:]
 
+    def login_step1(self, phone):
+        try:
+            import telethon
+            sess = phone.replace("+","").replace(" ","")
+            sess_path = os.path.join(SESSION_DIR, sess)
+            self._client = telethon.TelegramClient(sess_path, API_ID, API_HASH)
+            loop = asyncio.new_event_loop(); asyncio.set_event_loop(loop)
+            loop.run_until_complete(self._client.connect())
+            loop.run_until_complete(self._client.send_code_request(phone))
+            loop.close()
+            return {"ok": True, "msg": "Code sent"}
+        except Exception as e:
+            # Xóa session file nếu lỗi
+            if self._client:
+                try: self._client.disconnect()
+                except: pass
+                self._client = None
+            sess = phone.replace("+","").replace(" ","")
+            sess_file = os.path.join(SESSION_DIR, sess+".session")
+            if os.path.exists(sess_file):
+                try: os.remove(sess_file)
+                except: pass
+            return {"ok": False, "msg": str(e)}
 
-    def append_log(self, message, color):
+    def login_step2(self, phone, code):
+        try:
+            import telethon
+            loop = asyncio.new_event_loop(); asyncio.set_event_loop(loop)
+            loop.run_until_complete(self._client.sign_in(phone=phone, code=code))
+            me = loop.run_until_complete(self._client.get_me())
+            self._client.disconnect(); self._client = None; loop.close()
+            return {"ok": True, "msg": "OK: "+me.first_name}
+        except Exception as e:
+            msg = str(e)
+            if "password" in msg.lower() or "2fa" in msg.lower():
+                try:
+                    loop = asyncio.new_event_loop(); asyncio.set_event_loop(loop)
+                    loop.run_until_complete(self._client.sign_in(password=code))
+                    me = loop.run_until_complete(self._client.get_me())
+                    self._client.disconnect(); self._client = None; loop.close()
+                    return {"ok": True, "msg": "OK: "+me.first_name}
+                except:
+                    pass
+            # Xóa session file nếu fail
+            self._cleanup_session(phone)
+            return {"ok": False, "msg": msg}
 
-        if int(self.log_text.index("end-1c").split('.')[0]) > 30:
+    def _cleanup_session(self, phone):
+        if self._client:
+            try: self._client.disconnect()
+            except: pass
+            self._client = None
+        sess = phone.replace("+","").replace(" ","")
+        sf = os.path.join(SESSION_DIR, sess+".session")
+        if os.path.exists(sf):
+            try: os.remove(sf)
+            except: pass
 
-            self.log_text.delete("1.0", "2.0")
-
-        tag = "green" if color == "green" else "red" if color == "red" else "normal"
-
-        self.log_text.insert("end", message + "\n", tag)
-
-        self.log_text.see("end")
-
-
-
-    def run(self):
-
-        self.mainloop()
-
-
-
-
+    def login_cancel(self):
+        # PyWebView gọi login_cancel khi đóng modal
+        # Session file đã được tạo nhưng chưa auth -> cần xóa
+        pass  # Xóa session file sẽ được xử lý ở cleanup
 
 if __name__ == "__main__":
-
-    print("🚀 Khởi động C36 - Darkside...")
-
-    app = C36Darkside()
-
-    app.run()
-
+    webview.create_window("C36", html=HTML, js_api=Api(), width=800, height=520)
+    webview.start(debug=False)
