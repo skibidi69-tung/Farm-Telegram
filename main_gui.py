@@ -24,9 +24,7 @@ TOOLS_RAW = {
     "ADS_TON_bot": "https://raw.githubusercontent.com/skibidi69-tung/Farm-Telegram/main/tools/ADS_TON_bot.py",
     "notbux_bot": "https://raw.githubusercontent.com/skibidi69-tung/Farm-Telegram/main/tools/notbux_bot.py",
     "EggsHatchBot": "https://raw.githubusercontent.com/skibidi69-tung/Farm-Telegram/main/tools/EggsHatchBot.py",
-    "treward_ton_bot": "https://raw.githubusercontent.com/skibidi69-tung/Farm-Telegram/main/tools/treward_ton_bot.py",
-    "GeneratorBot": "https://raw.githubusercontent.com/skibidi69-tung/Farm-Telegram/main/tools/GeneratorBot.py",
-    "FishVerseBot": "https://raw.githubusercontent.com/skibidi69-tung/Farm-Telegram/main/tools/FishVerseBot.py"
+    "GeneratorBot": "https://raw.githubusercontent.com/skibidi69-tung/Farm-Telegram/main/tools/GeneratorBot.py"
 }
 
 log_queue = queue.Queue()
