@@ -1,9 +1,4 @@
-import os
-import json
-import asyncio
-import requests
-import re
-import urllib.parse
+import os, json, asyncio, re, urllib.parse, httpx, time
 from datetime import datetime
 from telethon import TelegramClient
 from telethon.tl.functions.messages import RequestWebViewRequest
@@ -11,37 +6,24 @@ from telethon.tl.functions.messages import RequestWebViewRequest
 # ====================== CONFIG ======================
 BASE_URL = "https://pocketincome.codeissuehub.com"
 BOT_USERNAME = 'ADS_TON_bot'
-SESSION_DIR = "sessions"   
-
-# Nhận log từ main_gui.py (nếu có)
-log_to_gui = None
+SESSION_DIR = "sessions"
+API_ID = 28752231
+API_HASH = 'ec1c1f2c30e2f1855c3edee7e348480b'
 
 def log(message: str, color: str = "white"):
     ts = datetime.now().strftime("%H:%M:%S")
-    if log_to_gui:
-        log_to_gui(f"[{ts}] {message}", color)
-    else:
-        colors = {
-            "green": "\033[92m",
-            "red": "\033[91m",
-            "yellow": "\033[93m",
-            "cyan": "\033[96m",
-            "magenta": "\033[95m",
-            "white": "\033[0m"
-        }
-        print(f"{colors.get(color, '')}[{ts}] {message}\033[0m")
-
+    colors = {"green": "\033[92m", "red": "\033[91m", "yellow": "\033[93m", "cyan": "\033[96m", "magenta": "\033[95m", "white": "\033[0m"}
+    print(f"{colors.get(color, '')}[{ts}] {message}\033[0m")
 
 class AdstonBot:
     def __init__(self, session_file: str):
         self.session_file = session_file
         self.name = session_file.replace('.session', '')
-        self.session = requests.Session()
         self.csrf = None
         self.balance = "0"
         self.today_ads = 0
         self.ads_limit = 0
-
+        self.client = httpx.AsyncClient(timeout=15)
         self.headers = {
             'User-Agent': "Mozilla/5.0 (Linux; Android 12; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Mobile Safari/537.36 Telegram-Android/12.1.1",
             'Accept': "application/json, text/plain, */*",
@@ -51,231 +33,103 @@ class AdstonBot:
         }
 
     async def get_init_data(self):
-        client = TelegramClient(os.path.join(SESSION_DIR, self.session_file), 28752231, 'ec1c1f2c30e2f1855c3edee7e348480b')
+        client = TelegramClient(os.path.join(SESSION_DIR, self.session_file), API_ID, API_HASH)
         await client.connect()
         try:
             if not await client.is_user_authorized():
-                log(f"[{self.name}] Session không hợp lệ hoặc đã logout", "red")
+                log(f"[{self.name}] Session lỗi/logout", "red")
                 return None
-
             bot_entity = await client.get_input_entity(BOT_USERNAME)
-            res = await client(RequestWebViewRequest(
-                peer=bot_entity,
-                bot=bot_entity,
-                platform='android',
-                from_bot_menu=False,
-                url=f"{BASE_URL}/"
-            ))
-
+            res = await client(RequestWebViewRequest(peer=bot_entity, bot=bot_entity, platform='android', from_bot_menu=False, url=f"{BASE_URL}/"))
             tg_data = urllib.parse.unquote(res.url.split('tgWebAppData=')[1].split('&tgWebAppVersion')[0])
             user_json = json.loads(urllib.parse.parse_qs(tg_data)['user'][0])
-
-            log(f"[{self.name}] Đăng nhập thành công", "green")
             return tg_data, user_json
+        except Exception as e:
+            log(f"[{self.name}] Init Error: {e}", "red")
+            return None
         finally:
             await client.disconnect()
 
     async def fetch_csrf(self):
         try:
-            resp = self.session.get(BASE_URL, headers=self.headers, timeout=15)
-            token = None
+            resp = await self.client.get(BASE_URL)
             meta = re.search(r'name="csrf-token" content="(.*?)"', resp.text)
             if meta:
-                token = meta.group(1)
-            elif self.session.cookies.get("XSRF-TOKEN"):
-                token = urllib.parse.unquote(self.session.cookies.get("XSRF-TOKEN"))
-
-            if token:
-                self.csrf = token
+                self.csrf = meta.group(1)
+                return True
+            xsrf = resp.cookies.get('XSRF-TOKEN')
+            if xsrf:
+                self.csrf = urllib.parse.unquote(xsrf)
                 return True
             return False
         except:
             return False
 
-    async def swap_gem_to_ton(self, user_id):
-        """Kiểm tra số dư điểm hiện tại, nếu lớn hơn hoặc bằng 100 thì tiến hành đổi sang TON"""
-        try:
-            current_balance = float(self.balance) if '.' in self.balance else int(self.balance)
-        except Exception:
-            current_balance = 0
-
-        if current_balance < 100:
-            log(f"[{self.name}] ℹ️ Tài sản hiện tại ({current_balance} Gems) chưa đủ 100 để thực hiện đổi TON.", "yellow")
-            return False
-
-        amount_to_swap = int((current_balance // 100) * 100)
-        log(f"[{self.name}] 💱 Phát hiện tài sản đủ điều kiện lúc khởi động. Đang gửi lệnh swap {amount_to_swap} Gems sang TON...", "cyan")
-
-        if not self.csrf:
-            await self.fetch_csrf()
-
-        headers = self.headers.copy()
+    async def _call_api(self, endpoint, method='POST', payload=None):
+        h = {**self.headers}
         if self.csrf:
-            headers['x-csrf-token'] = self.csrf
-
-        payload_swap = {
-            "user_id": int(user_id),
-            "amount": amount_to_swap
-        }
-
+            h['x-csrf-token'] = self.csrf
         try:
-            resp = self.session.post(f"{BASE_URL}/swap/gem-to-ton", json=payload_swap, headers=headers, timeout=15)
-            result = resp.json()
-            
-            msg = str(result.get("message", "")).lower()
-            is_ok = result.get("success") or result.get("ok") or "success" in msg
-
-            if is_ok:
-                if "new_balance" in result:
-                    self.balance = str(result.get("new_balance"))
-                elif "balance" in result:
-                    self.balance = str(result.get("balance"))
-                else:
-                    self.balance = str(current_balance - amount_to_swap)
-
-                log(f"[{self.name}] ✨ SWAP TON THÀNH CÔNG! Đã đổi {amount_to_swap} Gems. Số dư còn lại: {self.balance} Gems", "green")
-                return True
+            if method == 'POST':
+                resp = await self.client.post(f"{BASE_URL}{endpoint}", json=payload, headers=h)
             else:
-                log(f"[{self.name}] ❌ Giao dịch Swap thất bại: {result.get('message', 'Từ chối giao dịch')}", "red")
-                return False
-        except Exception as e:
-            log(f"[{self.name}] ⚠️ Lỗi kết nối API Swap: {e}", "red")
-            return False
+                resp = await self.client.get(f"{BASE_URL}{endpoint}", headers=h)
+            return resp.json()
+        except:
+            return {}
 
     async def run(self):
-        init_data = await self.get_init_data()
-        if not init_data:
-            return
-
-        _, user_info = init_data
-        user_id = int(user_info['id'])
-
-        # Tạo / Đồng bộ tài khoản ban đầu
-        try:
-            payload = {
-                "first_name": user_info.get('first_name', ''),
-                "last_name": user_info.get('last_name', ''),
-                "username": user_info.get('username', ''),
-                "id": user_id,
-                "referral_code": None
-            }
+        while True:
+            init = await self.get_init_data()
+            if not init: break
+            _, user_info = init
+            uid = int(user_info['id'])
             
             await self.fetch_csrf()
             
-            headers = self.headers.copy()
-            if self.csrf:
-                headers['x-csrf-token'] = self.csrf
-
-            resp = self.session.post(f"{BASE_URL}/user/check-or-create", json=payload, headers=headers)
-            data = resp.json()
-
+            # Check status
+            payload = {"first_name": user_info.get('first_name',''), "last_name": user_info.get('last_name',''), "username": user_info.get('username',''), "id": uid, "referral_code": None}
+            data = await self._call_api("/user/check-or-create", payload=payload)
             if data.get("success"):
-                user = data.get("user", {})
-                self.balance = str(user.get("balance", "0"))
-                self.today_ads = int(user.get("today_ads", 0))
-                self.ads_limit = int(user.get("ads_limit", 2))
-                log(f"[{self.name}] Balance: {self.balance} | Ads: {self.today_ads}/{self.ads_limit}", "cyan")
-        except Exception as e:
-            log(f"[{self.name}] Lỗi đồng bộ: {e}", "red")
-            return
+                u = data.get("user", {})
+                self.balance, self.today_ads, self.ads_limit = str(u.get("balance", "0")), int(u.get("today_ads", 0)), int(u.get("ads_limit", 2))
+                log(f"[{self.name}] Bal: {self.balance} | Ads: {self.today_ads}/{self.ads_limit}", "cyan")
+            
+            # Swap if needed
+            curr = float(self.balance) if '.' in self.balance else int(self.balance)
+            if curr >= 100:
+                amt = int((curr // 100) * 100)
+                log(f"[{self.name}] 💱 Swap {amt} Gems...", "cyan")
+                res = await self._call_api("/swap/gem-to-ton", payload={"user_id": uid, "amount": amt})
+                if res.get("success"):
+                    self.balance = str(res.get("new_balance", self.balance))
+                    log(f"[{self.name}] ✨ SWAP OK! Bal: {self.balance}", "green")
 
-        # 🎯 CHỈ SWAP DUY NHẤT 1 LẦN KHI BẮT ĐẦU CHẠY KHỞI ĐỘNG TOOL
-        await self.swap_gem_to_ton(user_id)
-
-        # ===== VÒNG LẶP VÔ TẬN Tuyệt Đối (CHỈ TẬP TRUNG FARM) =====
-        while True:
-            if not self.csrf and not await self.fetch_csrf():
-                log(f"[{self.name}] ⚠️ Lỗi lấy CSRF, thử lại sau 10s...", "yellow")
-                await asyncio.sleep(10)
-                continue
-
-            # Kiểm tra giới hạn ads
-            if self.ads_limit > 0 and self.today_ads >= self.ads_limit:
-                now = datetime.now()
-                tomorrow = now.replace(hour=0, minute=0, second=0, microsecond=0)
-                if now.hour >= 0:
-                    tomorrow = tomorrow.replace(day=now.day + 1)
+            # Farm Ads
+            while self.today_ads < self.ads_limit:
+                log(f"[{self.name}] 🎬 Xem ads {self.today_ads+1}/{self.ads_limit}...", "magenta")
+                await asyncio.sleep(35)
                 
-                wait_seconds = (tomorrow - now).total_seconds() + 60
-                log(f"[{self.name}] 🎯 Đã đạt giới hạn ads hôm nay ({self.today_ads}/{self.ads_limit}). Chờ reset lúc 00:00 ({int(wait_seconds)}s)...", "green")
-                
-                await asyncio.sleep(wait_seconds)
-                
-                try:
-                    resp = self.session.post(f"{BASE_URL}/user/check-or-create", json=payload, headers=headers)
-                    data = resp.json()
-                    if data.get("success"):
-                        user = data.get("user", {})
-                        self.balance = str(user.get("balance", "0"))
-                        self.today_ads = int(user.get("today_ads", 0))
-                        self.ads_limit = int(user.get("ads_limit", 2))
-                        log(f"[{self.name}] 🔄 Đã reset ngày mới! Balance: {self.balance} | Ads: {self.today_ads}/{self.ads_limit}", "cyan")
-                        # ĐÃ GỠ LỆNH SWAP Ở ĐÂY
-                except Exception as e:
-                    log(f"[{self.name}] Lỗi đồng bộ sau ngủ: {e}", "red")
-                    await asyncio.sleep(300) 
-                continue
-
-            current_ad = self.today_ads + 1
-            log(f"[{self.name}] 🎬 Đang xem quảng cáo {current_ad}/{self.ads_limit if self.ads_limit > 0 else '?'}...", "magenta")
-
-            for i in range(35, 0, -1):
-                print(f"\r[{datetime.now().strftime('%H:%M:%S')}] [{self.name}] ⏳ Đang xem ads... {i}s ", end="", flush=True)
-                await asyncio.sleep(1)
-            print("\r" + " " * 80, end="\r")
-
-            # Gửi yêu cầu claim reward
-            try:
-                payload_claim = {
-                    "telegram_id": user_id,
-                    "points": 50000,
-                    "type": "3_ads_set"
-                }
-                headers = self.headers.copy()
-                if self.csrf:
-                    headers['x-csrf-token'] = self.csrf
-
-                resp = self.session.post(f"{BASE_URL}/user/reward", json=payload_claim, headers=headers)
-                result = resp.json()
-
-                if result.get("success"):
-                    self.balance = str(result.get("new_balance", self.balance))
-                    self.today_ads += 1
-                    log(f"[{self.name}] 💰 Thành công +50k Points | Balance: {self.balance}", "green")
-                    # ĐÃ GỠ LỆNH SWAP Ở ĐÂY
+                res = await self._call_api("/user/reward", payload={"telegram_id": uid, "points": 50000, "type": "3_ads_set"})
+                if res.get("success"):
+                    self.balance, self.today_ads = str(res.get("new_balance", self.balance)), self.today_ads + 1
+                    log(f"[{self.name}] 💰 +50k | Bal: {self.balance}", "green")
                 else:
-                    msg_claim = result.get("message", "Lỗi không xác định")
-                    log(f"[{self.name}] ⚠️ Claim thất bại: {msg_claim} | Thử lại sau 30s...", "yellow")
-                    await asyncio.sleep(30)
-                    continue
+                    log(f"[{self.name}] ⚠️ Claim lỗi: {res.get('message')}", "yellow")
+                    await self.fetch_csrf()
+                    if "limit" in str(res.get('message')).lower(): break
+                    await asyncio.sleep(10)
 
-            except Exception as e:
-                log(f"[{self.name}] ⚠️ Lỗi claim: {e} | Thử lại sau 5s", "red")
-                await asyncio.sleep(5)
-                continue
+            log(f"[{self.name}] 🎯 Xong lượt. Nghỉ 1 tiếng...", "green")
+            await asyncio.sleep(3600)
 
-            await asyncio.sleep(5)
-
-
-# ====================== ENTRY POINT - MULTI ACCOUNT ======================
-async def run(session_files=None):
-    """Chạy tất cả session"""
-    if session_files is None:
-        if not os.path.exists(SESSION_DIR):
-            os.makedirs(SESSION_DIR, exist_ok=True)
-        session_files = [f for f in os.listdir(SESSION_DIR) if f.endswith('.session')]
-
-    if not session_files:
-        log("Không tìm thấy session nào trong thư mục sessions!", "red")
-        return
-
-    log(f"Bắt đầu chạy {len(session_files)} tài khoản Adston...", "cyan")
-
-    tasks = [AdstonBot(sess_file).run() for sess_file in session_files]
-    await asyncio.gather(*tasks, return_exceptions=True)
-
-    log("Hoàn thành tất cả tài khoản Adston!", "green")
-
+async def run_all():
+    sessions = [f for f in os.listdir(SESSION_DIR) if f.endswith('.session')]
+    log(f"🚀 ADS_TON bắt đầu {len(sessions)} tài khoản...", "cyan")
+    await asyncio.gather(*[AdstonBot(f).run() for f in sessions], return_exceptions=True)
 
 if __name__ == "__main__":
-    asyncio.run(run())
+    try:
+        asyncio.run(run_all())
+    except KeyboardInterrupt:
+        pass
