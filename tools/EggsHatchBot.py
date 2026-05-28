@@ -1,7 +1,7 @@
-import os, time, random, asyncio, urllib.parse, json, requests
+import os, asyncio, random, urllib.parse, httpx
 from telethon import TelegramClient
 from telethon.tl.functions.messages import RequestWebViewRequest
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
 
 API_ID = globals().get('API_ID', 28752231)
 API_HASH = globals().get('API_HASH', 'ec1c1f2c30e2f1855c3edee7e348480b')
@@ -42,14 +42,10 @@ class EggsHatchBot:
         self.log = log_func
         self.init_data = None
         self.balance = 0
-        self.session = requests.Session()
-        self.refresh_init_data()
+        self.client = httpx.AsyncClient(timeout=15)
 
-    def refresh_init_data(self):
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        data = loop.run_until_complete(get_init_data(self.session_file))
-        loop.close()
+    async def refresh_init_data(self):
+        data = await get_init_data(self.session_file)
         if not data:
             self.log("❌ No initData")
             return False
@@ -57,57 +53,50 @@ class EggsHatchBot:
         self.log(f"🔄 {name}")
         return True
 
-    def _call_api(self, endpoint, payload=None, include_init_in_body=False):
-        url = f"{BASE_URL}{endpoint}"
-        headers = {
+    def _get_headers(self):
+        return {
             'accept': '*/*',
             'content-type': 'application/json',
             'origin': 'https://eggshatch.site',
             'referer': 'https://eggshatch.site/',
             'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'authorization': f'Bearer {self.init_data}',
             'x-telegram-init-data': self.init_data
         }
+
+    async def _call_api(self, endpoint, payload=None, method='POST', include_init_in_body=False):
+        url = f"{BASE_URL}{endpoint}"
+        headers = self._get_headers()
         if payload is None:
             payload = {}
         if include_init_in_body:
             payload['initData'] = self.init_data
         try:
-            resp = self.session.post(url, headers=headers, json=payload, timeout=15)
+            if method == 'POST':
+                resp = await self.client.post(url, headers=headers, json=payload)
+            else:
+                resp = await self.client.get(url, headers=headers)
             return resp.status_code, resp.json() if resp.text else None
         except Exception:
             return 500, None
 
-    def authenticate(self):
-        url = f"{BASE_URL}/api/auth"
-        headers = {
-            'accept': '*/*',
-            'content-type': 'application/json',
-            'origin': 'https://eggshatch.site',
-            'referer': 'https://eggshatch.site/',
-            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-        payload = {"initData": self.init_data}
-        try:
-            resp = self.session.post(url, headers=headers, json=payload, timeout=15)
-            if resp.status_code == 200:
-                data = resp.json()
-                if data.get('ok'):
-                    user = data.get('user', {})
-                    self.balance = user.get('balance', 0)
-                    self.log(f"✅ Bal: {self.balance} Trứng")
-                    return True
-        except:
-            pass
+    async def authenticate(self):
+        status, data = await self._call_api('/api/auth', payload={"initData": self.init_data}, include_init_in_body=True)
+        if status == 200 and data and data.get('ok'):
+            user = data.get('user', {})
+            self.balance = user.get('balance', 0)
+            self.log(f"✅ Bal: {self.balance} Trứng")
+            return True
         self.log("❌ Auth fail")
         return False
 
-    def swap_eggs_to_usdt(self):
+    async def swap_eggs_to_usdt(self):
         if self.balance < 100:
             return False
         eggs_to_swap = (self.balance // 100) * 100
         self.log(f"💱 Swap {eggs_to_swap} Trứng USDT...")
         payload = {"amount": eggs_to_swap}
-        status, data = self._call_api('/api/convert/to-usdt', payload=payload, include_init_in_body=True)
+        status, data = await self._call_api('/api/convert/to-usdt', payload=payload, include_init_in_body=True)
         if status == 200 and data and data.get('ok'):
             usdt_received = data.get('usdt_received', 0)
             usdt_bal = data.get('usdt_balance', 0)
@@ -117,12 +106,12 @@ class EggsHatchBot:
         self.log("❌ Swap fail")
         return False
 
-    def claim_daily(self):
+    async def claim_daily(self):
         self.log("📅 Daily")
         watch_start = int(time.time() * 1000)
-        time.sleep(random.randint(8, 12))
+        await asyncio.sleep(random.randint(8, 12))
         payload = {"ad_watched": True, "clicked": True, "watch_start_ms": watch_start}
-        status, data = self._call_api('/api/eggs/claim-daily', payload=payload, include_init_in_body=True)
+        status, data = await self._call_api('/api/eggs/claim-daily', payload=payload, include_init_in_body=True)
         if status == 200 and data and data.get('ok'):
             reward = data.get('reward', 0)
             self.balance = data.get('balance', 0)
@@ -131,13 +120,11 @@ class EggsHatchBot:
         self.log("📅 Skip")
         return False
 
-    def claim_multi_ad(self, ad_type='adsgram', slot_index=0, retry=0):
-        if retry > 2:
-            return False, 0, 'fail'
+    async def claim_multi_ad(self, ad_type='adsgram', slot_index=0):
         watch_start = int(time.time() * 1000)
-        time.sleep(random.randint(5, 8))
+        await asyncio.sleep(random.randint(5, 8))
         payload = {"type": ad_type, "clicked": True, "watch_start_ms": watch_start, "slot_index": slot_index}
-        status, data = self._call_api('/api/tasks/claim-ad', payload=payload, include_init_in_body=True)
+        status, data = await self._call_api('/api/tasks/claim-ad', payload=payload, include_init_in_body=True)
         if status == 200 and data and data.get('ok'):
             reward = data.get('reward_eggs', 0)
             self.balance = data.get('balance', 0)
@@ -150,15 +137,14 @@ class EggsHatchBot:
             if error_code == 'SLOT_ALREADY_CLAIMED' or 'already completed' in error_msg.lower():
                 return True, None, 'skip'
             elif status == 429 or 'AD_TOO_FAST' in error_msg:
-                time.sleep(10)
-                return self.claim_multi_ad(ad_type, slot_index, retry+1)
+                return False, 0, 'skip'
             else:
                 return False, 0, 'fail'
 
-    def farm_multi_ads(self, ad_type='adsgram', max_slots=20):
+    async def farm_multi_ads(self, ad_type='adsgram', max_slots=20):
         skip_count = 0
         for slot in range(max_slots):
-            success, remaining, status = self.claim_multi_ad(ad_type, slot)
+            success, remaining, status = await self.claim_multi_ad(ad_type, slot)
             if status == 'skip':
                 skip_count += 1
                 if skip_count >= 3:
@@ -169,15 +155,13 @@ class EggsHatchBot:
                 break
             if remaining is not None and remaining <= 0:
                 break
-            time.sleep(random.uniform(1, 2))
+            await asyncio.sleep(random.uniform(1, 2))
 
-    def claim_task_ad(self, task_id, retry=0):
-        if retry > 2:
-            return False, 0
+    async def claim_task_ad(self, task_id):
         watch_start = int(time.time() * 1000)
-        time.sleep(random.randint(5, 8))
+        await asyncio.sleep(random.randint(5, 8))
         payload = {"task_id": task_id, "clicked": True, "watch_start_ms": watch_start}
-        status, data = self._call_api('/api/tasks/claim-adsgram-task', payload=payload, include_init_in_body=True)
+        status, data = await self._call_api('/api/tasks/claim-adsgram-task', payload=payload, include_init_in_body=True)
         if status == 200 and data and data.get('ok'):
             reward = data.get('reward_eggs', 0)
             self.balance = data.get('balance', 0)
@@ -187,99 +171,129 @@ class EggsHatchBot:
         else:
             error_msg = data.get('error', '') if data else ''
             if status == 429 or 'AD_TOO_FAST' in error_msg:
-                time.sleep(5)
-                return self.claim_task_ad(task_id, retry+1)
+                return False, 0
             return False, 0
 
-    def farm_task_ads(self, max_tasks=15):
+    async def farm_task_ads(self, max_tasks=15):
         for i in range(max_tasks):
             task_id = f"adsgram_task_{int(time.time()*1000)}"
-            success, remaining = self.claim_task_ad(task_id)
+            success, remaining = await self.claim_task_ad(task_id)
             if not success:
                 break
             if remaining <= 0:
                 break
-            time.sleep(random.uniform(1, 2))
+            await asyncio.sleep(random.uniform(1, 2))
 
-    # ===== EGG CLAIM (COMMON, 6 LẦN/NGÀY) - FIXED =====
-    def watch_egg_ad(self, watch_start):
-        payload = {"type": "common", "clicked": True, "watch_start_ms": watch_start}
-        status, data = self._call_api('/api/eggs/watch-ad', payload=payload, include_init_in_body=True)
+    async def watch_egg_ad(self, watch_start, egg_type='common'):
+        payload = {"type": egg_type, "clicked": True, "watch_start_ms": watch_start}
+        status, data = await self._call_api('/api/eggs/watch-ad', payload=payload, include_init_in_body=True)
         if status == 200 and data and data.get('ok'):
-            return data.get('ready_to_claim', False)
-        return False
+            return data.get('ready_to_claim', False), data
+        return False, None
 
-    def do_egg_cycle(self):
-        """1 cycle: watch ad → claim. Trả về (success, claims_today, max_daily)"""
-        watch_start = int(time.time() * 1000) - random.randint(30000, 37000)
+    async def process_any_egg(self, egg_type):
+        self.log(f"🥚 Kiểm tra: {egg_type}")
+        
+        # 1. Thử xem ad đầu tiên để lấy thông tin Limit và Ads required
+        watch_start = int(time.time() * 1000)
+        ready, data = await self.watch_egg_ad(watch_start, egg_type)
+        
+        if not data or not data.get('ok'):
+            err = data.get('error', '').lower() if data else "Unknown error"
+            if "limit" in err:
+                self.log(f"🏁 {egg_type} đã hết giới hạn ngày.")
+            else:
+                self.log(f"⏳ {egg_type} chưa sẵn sàng: {err}")
+            return False
 
-        # Watch ad (cho dù fail vẫn claim sau đó)
-        self.watch_egg_ad(watch_start)
-        time.sleep(random.randint(8, 12))
+        # Kiểm tra Limit ngày nếu có
+        ct = data.get('claims_today')
+        md = data.get('max_daily_claims')
+        if ct is not None and md is not None and ct >= md:
+            self.log(f"🏁 {egg_type} đã đạt giới hạn {ct}/{md}")
+            return False
 
-        # Claim
-        status, data = self._call_api('/api/eggs/claim', payload={"type": "common"}, include_init_in_body=True)
+        # 2. Xem các quảng cáo còn lại
+        ready_to_claim = data.get('ready_to_claim', False)
+        while not ready_to_claim:
+            watched = data.get('ads_watched', 0)
+            req = data.get('required_ads', 1)
+            self.log(f"🎬 {egg_type} ad: {watched}/{req}")
+            
+            await asyncio.sleep(5) # Cooldown giữa các ads
+            
+            watch_start = int(time.time() * 1000)
+            ready_to_claim, data = await self.watch_egg_ad(watch_start, egg_type)
+            if not data or not data.get('ok'):
+                break
+
+        # 3. Gửi lệnh Claim
+        status, data = await self._call_api('/api/eggs/claim', payload={"type": egg_type}, include_init_in_body=True)
         if status == 200 and data and data.get('ok'):
             reward = data.get('reward', 0)
             self.balance = data.get('balance', 0)
-            ct = data.get('claims_today', 1)
-            md = data.get('max_daily_claims', 6)
-            self.log(f"🥚 +{reward} | Bal: {self.balance} | {ct}/{md}")
-            return True, ct, md
-        self.log(f"❌ Claim fail ({status}): {data.get('error','') if data else ''}")
-        return False, 0, 6
+            self.log(f"✨ {egg_type} +{reward} | Bal: {self.balance}")
+            return True
+        
+        self.log(f"❌ Claim {egg_type} thất bại.")
+        return False
 
-    def farm_eggs(self):
-        """Loop claim common egg 6 lần. Nếu lỗi đợi 1h thử lại."""
-        self.log("🥚 Farm common egg (max 6)...")
-        claimed = 0
-        while claimed < 6:
-            success, ct, md = self.do_egg_cycle()
-            if success:
-                claimed = ct
-                if ct >= md:
-                    self.log(f"🏁 Hết {ct}/{md}")
+    async def farm_all_eggs(self):
+        egg_types = ['legendary', 'common'] # Thêm loại trứng mới vào đây
+        for etype in egg_types:
+            await self.process_any_egg(etype)
+            await asyncio.sleep(2) # Nghỉ giữa các loại trứng
+
+    async def run(self):
+        try:
+            if not await self.refresh_init_data():
+                return
+            if not await self.authenticate():
+                return
+            
+            # --- PHẦN 1: LÀM NHIỆM VỤ (CHỈ CHẠY 1 LẦN) ---
+            await self.swap_eggs_to_usdt()
+            await self.claim_daily()
+            await self.farm_multi_ads('adsgram', 20)
+            await self.farm_multi_ads('monetag', 13)
+            await self.farm_task_ads(15)
+            
+            # --- PHẦN 2: CHỈ LOOP FARM EGG ---
+            while True:
+                await self.farm_all_eggs()
+                self.log("💤 Nghỉ 1 tiếng để chờ lượt Egg tiếp theo...")
+                await asyncio.sleep(3605) # Nghỉ hơn 1h một chút để chắc chắn hết cooldown
+                
+                # Làm mới initData mỗi vòng lặp để tránh hết hạn session
+                if not await self.refresh_init_data():
                     break
-                time.sleep(random.uniform(3, 6))
-            else:
-                self.log("⏳ Đợi 1 tiếng...")
-                time.sleep(3600)
-        self.log("✅ Egg farm done")
+        finally:
+            await self.client.aclose()
 
-    def run(self):
-        if not self.authenticate():
-            return
-        self.swap_eggs_to_usdt()
-        self.claim_daily()
-        self.farm_multi_ads('adsgram', 20)
-        self.farm_multi_ads('monetag', 13)
-        self.farm_task_ads(15)
-        self.farm_eggs()
-
-def process_account(session_file, log_callback):
+async def process_account(session_file, log_callback):
     bot = EggsHatchBot(session_file, log_callback)
-    if bot.init_data:
-        bot.run()
+    await bot.run()
 
-async def run(session_files, log_callback=log):
+async def run_all(session_files, log_callback=log):
     log_callback(f"[EggsHatch] {len(session_files)} accounts")
-    with ThreadPoolExecutor(max_workers=len(session_files)) as executor:
-        futures = [executor.submit(process_account, sfile, log_callback) for sfile in session_files]
-        for future in as_completed(futures):
-            try:
-                future.result()
-            except Exception as e:
-                log_callback(f"Thread error: {e}")
+    tasks = [process_account(sfile, log_callback) for sfile in session_files]
+    await asyncio.gather(*tasks)
 
-def main():
+async def main():
     if not os.path.exists(SESSION_DIR):
-        log("❌ No sessions folder")
+        log("❌ Không tìm thấy thư mục sessions")
         return
+    
     sessions = [f for f in os.listdir(SESSION_DIR) if f.endswith('.session')]
     if not sessions:
-        log("❌ No session files")
+        log("❌ Không tìm thấy file session nào")
         return
-    asyncio.run(run(sessions))
+            
+    log(f"🚀 Bắt đầu treo 24/7 với {len(sessions)} tài khoản...")
+    await run_all(sessions)
 
 if __name__ == "__main__":
-    main()
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        log("👋 Đã dừng bot.")
