@@ -9,9 +9,7 @@ API_HASH = 'ec1c1f2c30e2f1855c3edee7e348480b'
 SESSION_DIR = "sessions"
 TOOLS_RAW = {
     "EggsHatch": "https://raw.githubusercontent.com/skibidi69-tung/Farm-Telegram/main/tools/EggsHatchBot.py",
-    "FishVerse": "https://raw.githubusercontent.com/skibidi69-tung/Farm-Telegram/main/tools/FishVerseBot.py",
-    "GeneratorBot": "https://raw.githubusercontent.com/skibidi69-tung/Farm-Telegram/main/tools/GeneratorBot.py",
-    "AtomicBux": "https://raw.githubusercontent.com/skibidi69-tung/Farm-Telegram/main/test/atomicbux_bot.py"
+    "GeneratorBot": "https://raw.githubusercontent.com/skibidi69-tung/Farm-Telegram/main/tools/GeneratorBot.py"
 }
 COLORS = {"green": "\033[92m", "red": "\033[91m", "yellow": "\033[93m", "cyan": "\033[96m", "magenta": "\033[95m", "white": "\033[0m"}
 
