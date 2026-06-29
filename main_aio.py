@@ -1,4 +1,4 @@
-import os, sys, threading, requests, asyncio, json, time, queue, subprocess
+import os, sys, threading, requests, asyncio, json, time, queue
 from datetime import datetime
 from telethon import TelegramClient
 from telethon.tl.functions.messages import RequestWebViewRequest
@@ -24,6 +24,41 @@ def clear():
 def list_sessions():
     if not os.path.exists(SESSION_DIR): os.makedirs(SESSION_DIR)
     return [f for f in os.listdir(SESSION_DIR) if f.endswith('.session')]
+
+def check_sessions():
+    """Auto-check all sessions, remove expired/invalid ones"""
+    log("🔄 Checking sessions...", "cyan")
+    if not os.path.exists(SESSION_DIR): os.makedirs(SESSION_DIR)
+    
+    files = [f for f in os.listdir(SESSION_DIR) if f.endswith('.session')]
+    removed = 0
+    kept = 0
+    
+    for f in files:
+        path = os.path.join(SESSION_DIR, f)
+        try:
+            client = TelegramClient(path, API_ID, API_HASH)
+            client.connect()
+            if client.is_user_authorized():
+                me = client.get_me()
+                log(f"   ✓ {f} ({me.first_name})", "green")
+                kept += 1
+            else:
+                log(f"   ✗ {f} expired, removing...", "red")
+                client.disconnect()
+                os.remove(path)
+                removed += 1
+                continue
+            client.disconnect()
+        except Exception as e:
+            log(f"   ✗ {f} error: {e}, removing...", "red")
+            try:
+                os.remove(path)
+                removed += 1
+            except: pass
+    
+    log(f"✅ Done: {kept} valid, {removed} removed", "green")
+    return removed
 
 def run_tool(name):
     url = TOOLS_RAW.get(name)
@@ -78,7 +113,7 @@ def login_telegram():
         log(f"❌ Error: {e}", "red")
 
 def menu():
-    sessions = list_sessions()
+    sessions = [f for f in os.listdir(SESSION_DIR) if f.endswith('.session')] if os.path.exists(SESSION_DIR) else []
     print()
     print(f"\033[95m═══════════════════════════════════\033[0m")
     print(f"\033[95m  C36 FARM - Termux/PC Edition\033[0m")
@@ -88,6 +123,7 @@ def menu():
     print(f" \033[33m 1\033[0m. Login Telegram")
     print(f" \033[33m 2\033[0m. Run All Tools (ALL Sessions)")
     print(f" \033[33m 3\033[0m. List Sessions")
+    print(f" \033[33m 4\033[0m. Clean Invalid Sessions")
     print(f" \033[33m 0\033[0m. Run Single Tool")
     print(f" \033[33m Q\033[0m. Quit")
     print()
@@ -115,6 +151,10 @@ def run_single():
 
 def main():
     if not os.path.exists(SESSION_DIR): os.makedirs(SESSION_DIR)
+    clear()
+    log("🚀 C36 FARM initialized", "magenta")
+    check_sessions()
+    
     while True:
         clear()
         menu()
@@ -124,10 +164,20 @@ def main():
         elif cmd == '2': run_all()
         elif cmd == '3':
             clear()
-            sf = list_sessions()
+            sf = [f for f in os.listdir(SESSION_DIR) if f.endswith('.session')]
             print(f"\033[94mSessions ({len(sf)}):\033[0m")
-            for f in sf: print(f"   ✓ {f}")
+            for f in sf: 
+                try:
+                    client = TelegramClient(os.path.join(SESSION_DIR, f), API_ID, API_HASH)
+                    client.connect()
+                    status = "✓" if client.is_user_authorized() else "✗"
+                    client.disconnect()
+                except: status = "✗"
+                print(f"   {status} {f}")
             input("\nPress Enter...")
+        elif cmd == '4':
+            check_sessions()
+            input("Press Enter...")
         elif cmd == '0': run_single()
         else:
             input("Invalid command. Press Enter...")
