@@ -28,7 +28,7 @@ async def get_init_data(session_file):
         await client.disconnect()
         return init_data, me.first_name, me.id
     except Exception as e:
-        log(f"Lỗi Telethon: {e}")
+        log(f"Telethon error: {e}")
         await client.disconnect()
         return None
 
@@ -67,117 +67,119 @@ class EggsHatchBot:
     async def authenticate(self):
         status, data = await self._call_api('/api/auth', payload={"initData": self.init_data})
         if status == 200 and data and data.get('ok'):
-            self.log(f"✅ Bal: {data['user'].get('balance', 0)} Trứng")
+            self.log(f"✅ Bal: {data['user'].get('balance', 0)} Eggs")
             return True
         return False
 
     async def farm_multi_ads(self):
-        self.log("🎬 Kiểm tra Adsgram (15) & Monetag (13)...")
-        # Adsgram (15)
+        self.log("Checking Adsgram (15) & Monetag (13) & Monetix (13)...")
         for i in range(15):
-            start_ms = int(time.time() * 1000) - 5000 # Giả lập bắt đầu sớm 5s
-            await asyncio.sleep(random.randint(10, 15)) # Đợi xem ad ngắn hơn
+            start_ms = int(time.time() * 1000) - 5000
+            await asyncio.sleep(random.randint(10, 15))
             st, d = await self._call_api('/api/tasks/claim-ad', payload={"type": "adsgram", "clicked": True, "watch_start_ms": start_ms, "slot_index": i})
             if st == 200 and d.get('ok'):
-                self.log(f"🎬 Adsgram Slot {i} OK (+{d.get('reward_eggs')} trứng)")
+                self.log(f"Adsgram Slot {i} OK (+{d.get('reward_eggs')} eggs)")
             else:
                 err = d.get('error', 'Skip') if d else 'Error'
                 if d and d.get('code') == 'SLOT_ALREADY_CLAIMED':
-                    continue # Đã làm rồi, lướt qua nhanh
-                self.log(f"⏩ Adsgram Slot {i}: {err}")
-                continue 
+                    continue
+                self.log(f"Skip Adsgram Slot {i}: {err}")
+                continue
 
-        # Monetag (13)
         for i in range(13):
             start_ms = int(time.time() * 1000) - 5000
             await asyncio.sleep(random.randint(10, 15))
             st, d = await self._call_api('/api/tasks/claim-ad', payload={"type": "monetag", "clicked": True, "watch_start_ms": start_ms, "slot_index": i})
             if st == 200 and d.get('ok'):
-                self.log(f"🎬 Monetag Slot {i} OK (+{d.get('reward_eggs')} trứng)")
+                self.log(f"Monetag Slot {i} OK (+{d.get('reward_eggs')} eggs)")
             else:
                 err = d.get('error', 'Skip') if d else 'Error'
                 if d and d.get('code') == 'SLOT_ALREADY_CLAIMED':
                     continue
-                self.log(f"⏩ Monetag Slot {i}: {err}")
+                self.log(f"Skip Monetag Slot {i}: {err}")
+                continue
+
+        for i in range(13):
+            start_ms = int(time.time() * 1000) - 5000
+            await asyncio.sleep(random.randint(10, 15))
+            st, d = await self._call_api('/api/tasks/claim-monetix-task', payload={"status": "completed", "slot_index": i, "watch_start_ms": start_ms})
+            if st == 200 and d.get('ok'):
+                self.log(f"Monetix Slot {i} OK (+{d.get('reward_eggs')} eggs)")
+            else:
+                err = d.get('error', 'Skip') if d else 'Error'
+                if d and d.get('code') == 'SLOT_ALREADY_CLAIMED':
+                    continue
+                self.log(f"Skip Monetix Slot {i}: {err}")
                 continue
 
     async def farm_adexium_tasks(self):
-        self.log("💎 Kiểm tra Adexium (20)...")
+        self.log("Checking Adexium (20)...")
         for i in range(20):
             start_ms = int(time.time() * 1000) - 5000
             await asyncio.sleep(random.randint(10, 15))
             st, d = await self._call_api('/api/tasks/claim-adexium-task', payload={"done": True, "task_id": None, "slot_index": i, "watch_start_ms": start_ms})
             if st == 200 and d.get('ok'):
-                self.log(f"💎 Adexium Slot {i} OK (+{d.get('reward_eggs')} trứng)")
+                self.log(f"Adexium Slot {i} OK (+{d.get('reward_eggs')} eggs)")
             else:
                 err = d.get('error', 'Skip') if d else 'Error'
                 if d and d.get('code') == 'SLOT_ALREADY_CLAIMED':
                     continue
-                self.log(f"⏩ Adexium Slot {i}: {err}")
+                self.log(f"Skip Adexium Slot {i}: {err}")
                 continue
 
     async def farm_eggs_via_summary(self):
         status, data = await self._call_api('/api/eggs/summary', method='GET')
         if status != 200 or not data.get('ok'): 
-            self.log("❌ Không lấy được Summary")
+            self.log("Failed to fetch summary")
             return
         
-        self.log(f"🥚 Tổng sản lượng: {data.get('total_hourly_production')} trứng/h")
+        self.log(f"Total hourly production: {data.get('total_hourly_production')} eggs/h")
         
         for egg in data.get('eggs', []):
             etype = egg['type']
-            self.log(f"🔍 Kiểm tra {etype}:")
+            self.log(f"Checking {etype}:")
             
             if egg.get('daily_limit_hit'):
-                self.log(f"   🏁 {etype} đã hết lượt ngày ({egg.get('claims_today')}/{egg.get('max_daily_claims')})")
+                self.log(f"   {etype} daily limit hit ({egg.get('claims_today')}/{egg.get('max_daily_claims')})")
                 continue
             
             if not egg.get('time_ready'):
-                self.log(f"   ⏳ {etype} đang sản xuất: còn {egg.get('remaining_s')}s")
+                self.log(f"   {etype} producing: {egg.get('remaining_s')}s left")
                 continue
 
-            # Xem ads cho đến khi server báo sẵn sàng
             ready_to_claim = egg.get('can_claim', False)
             while not ready_to_claim:
-                self.log(f"   🥚 {etype} chưa đủ ads, đang xem thêm...")
-                start_ms = int(time.time() * 1000) - 10000 # Giả lập bắt đầu trước 10s
-                
-                # Nghỉ trước khi báo cho server (giả lập đang xem)
+                self.log(f"   {etype} not enough ads, watching more...")
+                start_ms = int(time.time() * 1000) - 10000
                 await asyncio.sleep(random.randint(35, 45)) 
-                
                 st_ad, d_ad = await self._call_api('/api/eggs/watch-ad', payload={"type": etype, "clicked": True, "watch_start_ms": start_ms})
-                
                 if d_ad and d_ad.get('ok'):
                     ready_to_claim = d_ad.get('ready_to_claim', False)
                     watched = d_ad.get('ads_watched', 0)
                     total = d_ad.get('required_ads', 1)
-                    self.log(f"   🎬 {etype} ads: {watched}/{total}")
+                    self.log(f"   {etype} ads: {watched}/{total}")
                 else:
-                    self.log(f"   ❌ Lỗi khi xem ad cho {etype}: {d_ad.get('error') if d_ad else st_ad}")
-                    # Nếu server báo xem chưa hết, nghỉ thêm rồi thử lại
+                    self.log(f"   Error watching ad for {etype}: {d_ad.get('error') if d_ad else st_ad}")
                     await asyncio.sleep(10)
-                    # Nếu lỗi không phải do thời gian thì mới break
                     if d_ad and "full ad" not in d_ad.get('error', ''):
                         break
             
             if not ready_to_claim:
-                self.log(f"   ⏩ Bỏ qua {etype} do chưa xem đủ ads.")
+                self.log(f"   Skip {etype} - not enough ads watched.")
                 continue
 
-            # Claim
-            self.log(f"   ✨ Đang gửi lệnh Claim cho {etype}...")
+            self.log(f"   Sending claim for {etype}...")
             st, d = await self._call_api('/api/eggs/claim', payload={"type": etype})
             if st == 200 and d.get('ok'):
-                self.log(f"   ✅ {etype} Claim thành công! +{d.get('reward')} | Bal: {d.get('balance')}")
+                self.log(f"   {etype} claimed! +{d.get('reward')} | Bal: {d.get('balance')}")
             else:
-                self.log(f"   ❌ {etype} Claim thất bại: {d.get('error') if d else st}")
+                self.log(f"   {etype} claim failed: {d.get('error') if d else st}")
 
     async def run(self):
         try:
             if not await self.refresh_init_data(): return
             if not await self.authenticate(): return
             
-            # Claim Daily
             start_ms = int(time.time() * 1000)
             await asyncio.sleep(10)
             await self._call_api('/api/eggs/claim-daily', payload={"ad_watched": True, "clicked": True, "watch_start_ms": start_ms})
@@ -187,16 +189,16 @@ class EggsHatchBot:
             
             while True:
                 await self.farm_eggs_via_summary()
-                self.log("💤 Nghỉ 1 tiếng...")
+                self.log("Sleeping 1 hour...")
                 await asyncio.sleep(3605)
                 if not await self.refresh_init_data(): break
         finally: await self.client.aclose()
 
 async def main():
-    if not os.path.exists(SESSION_DIR): return log("❌ No sessions folder")
+    if not os.path.exists(SESSION_DIR): return log("No sessions folder")
     sessions = [f for f in os.listdir(SESSION_DIR) if f.endswith('.session')]
-    if not sessions: return log("❌ No sessions")
-    log(f"🚀 Bắt đầu treo 24/7 với {len(sessions)} tài khoản...")
+    if not sessions: return log("No sessions found")
+    log(f"Starting 24/7 farm with {len(sessions)} accounts...")
     tasks = [EggsHatchBot(s).run() for s in sessions]
     await asyncio.gather(*tasks)
 
